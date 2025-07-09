@@ -182,11 +182,14 @@ class RawXMLExporter(BaseExporter):
 
     def export(self, pages: List[PageData]) -> Dataset:
         """Export pages as image + raw XML pairs."""
-
+        print(f"Exporting raw XML content with images... (Processed: {len(pages)})")
         def generate_examples():
             """Generate examples from pages with images and XML content."""
             for page in pages:
                 image_path = self._find_image(page)
+                if not image_path:
+                    print(f"Warning: No image found for {page.image_filename} in project {page.project_name}")
+                    continue
                 if image_path:
                     image = self._load_image(image_path)
                     if image:

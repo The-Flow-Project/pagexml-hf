@@ -2,14 +2,15 @@
 Parser for Transkribus ZIP files and PAGE XML format.
 """
 
-import zipfile
-import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Tuple, Callable
-from dataclasses import dataclass
-import re
-import chardet
 import os
-from pathlib import Path
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Dict, List, Optional, Tuple, Callable
+
+import chardet
 
 
 @dataclass
@@ -54,9 +55,11 @@ class XmlParser:
     Page XML files in a folder structure with images or image-URL in the XML.
     """
 
-    def __init__(self, namespace: Optional[Dict[str, str]] = None):
+    def __init__(self, namespace: Optional[str] = None):
         if namespace:
-            self.namespace = namespace
+            self.namespace = {
+                "pc": namespace
+            }
         else:
             # Default namespace for PAGE XML
             # This can be overridden if needed
@@ -81,14 +84,15 @@ class XmlParser:
             file_list = zip_file.namelist()
 
             # Group files by project (top-level directory)
-            projects = self._group_files_by_project(file_list)
+            projects = self._auto_group_files(file_list)
 
             for project_name, project_files in projects.items():
+                print(f"Processing project: {project_name} ({len(project_files)} files)")
                 xml_files = [
                     f
                     for f in project_files
                     if f.endswith(".xml")
-                       and "/page/" in f
+                       and not self._is_metadata_file(f)
                        and not self._is_macos_metadata_file(f)
                 ]
 
@@ -112,24 +116,36 @@ class XmlParser:
         Returns:
             List of PageData objects
         """
-        project_name = os.path.basename(folder_path.rstrip("/\\"))
-
+        pages = []
         folder = Path(folder_path)
-        xml_files = [str(p) for p in folder.rglob("page/**/*.xml") if p.is_file()]
+        xml_files = [str(p) for p in folder.rglob("*.xml") if p.is_file()]
+        projects = self._auto_group_files(xml_files)
 
-        def file_loader(file_path: str) -> Optional[str]:
-            """
-            Load XML file content from the filesystem with automatic encoding detection.
-            """
-            try:
-                with open(file_path, "rb") as f:
-                    raw_content = f.read()
-                return self._decode_bytes(raw_content, file_path)
-            except Exception as e:
-                print(f"Error reading {file_path}: {e}")
-                return None
+        for project_name, project_files in projects.items():
+            print(f"Processing project: {project_name} ({len(project_files)} files)")
+            xml_files = [
+                f
+                for f in project_files
+                if f.endswith(".xml")
+                   and not self._is_metadata_file(f)
+                   and not self._is_macos_metadata_file(f)
+            ]
 
-        return self._parse_files(xml_files, file_loader, project_name)
+            def file_loader(file_path: str) -> Optional[str]:
+                """
+                Load XML file content with automatic encoding detection.
+                """
+                try:
+                    with open(file_path, "rb") as f:
+                        raw_content = f.read()
+                    return self._decode_bytes(raw_content, file_path)
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+                    return None
+
+            pages.extend(self._parse_files(xml_files, file_loader, project_name))
+
+        return pages
 
     def _parse_files(
             self,
@@ -142,6 +158,7 @@ class XmlParser:
             try:
                 xml_content = loader(file_path)
                 if xml_content is None:
+                    print(f"Skipping {file_path} due to read error")
                     continue
 
                 page_data = self._parse_page_xml(xml_content, project_name)
@@ -187,20 +204,6 @@ class XmlParser:
         return None
 
     @staticmethod
-    def _group_files_by_project(file_list: List[str]) -> Dict[str, List[str]]:
-        """Group files by their top-level directory (project)."""
-        projects = {}
-
-        for file_path in file_list:
-            if "/" in file_path:
-                project_name = file_path.split("/")[0]
-                if project_name not in projects:
-                    projects[project_name] = []
-                projects[project_name].append(file_path)
-
-        return projects
-
-    @staticmethod
     def _is_macos_metadata_file(file_path: str) -> bool:
         """Check if a file is a macOS metadata file that should be skipped."""
         # Skip __MACOSX directory and ._ prefixed files
@@ -212,6 +215,12 @@ class XmlParser:
             return True
 
         return False
+
+    @staticmethod
+    def _is_metadata_file(file_path: str) -> bool:
+        """Check if a file is a metadata file that should be skipped."""
+        base = os.path.basename(file_path)
+        return base.lower() in ['mets.xml', 'metadata.xml']
 
     def _parse_page_xml(
             self, xml_content: str, project_name: str
@@ -248,6 +257,21 @@ class XmlParser:
         except ET.ParseError as e:
             print(f"XML parsing error: {e}")
             return None
+
+    def _auto_group_files(self, file_list: List[str]) -> Dict[str, List[str]]:
+        """
+        Automatically group files by their top-level directory (project).
+        This is a helper function to ensure files are grouped correctly.
+        """
+        xmls = [f for f in file_list if f.endswith(".xml") and not self._is_metadata_file(f)]
+        project_names = {}
+        for f in xmls:
+            project_name = self._get_logical_project_parent(f)
+            if project_name not in project_names:
+                project_names[project_name] = []
+            project_names[project_name].append(f)
+
+        return project_names
 
     def _parse_reading_order(self, root: ET.Element) -> Dict[str, int]:
         """Parse the reading order from the XML."""
@@ -341,6 +365,18 @@ class XmlParser:
         lines.sort(key=lambda ln: ln.reading_order)
 
         return lines
+
+    @staticmethod
+    def _get_logical_project_parent(f: str) -> str:
+        path = PurePosixPath(f)
+        parts = path.parts
+        if "page" in parts:
+            idx = parts.index("page")
+            if idx > 0:
+                return parts[idx - 1]
+        if len(parts) >= 2:
+            return parts[-2]
+        return parts[0]
 
     @staticmethod
     def _parse_coords(coords_elem: Optional[ET.Element]) -> List[Tuple[int, int]]:

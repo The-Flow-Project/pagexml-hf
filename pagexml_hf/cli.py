@@ -28,6 +28,13 @@ def main():
     )
 
     parser.add_argument(
+        "--namespace",
+        type=str,
+        default=None,
+        help="Namespace of the Page XML files (default: empty string)",
+    )
+
+    parser.add_argument(
         "--window-size",
         type=int,
         default=2,
@@ -128,6 +135,7 @@ def main():
     converter = XmlConverter(
         zip_path=str(zip_path) if zip_path else None,
         folder_path=str(folder_path) if folder_path else None,
+        xmlnamespace=str(args.namespace) if args.namespace else None,
     )
 
     # Show statistics if requested

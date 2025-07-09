@@ -30,7 +30,10 @@ class XmlConverter:
     }
 
     def __init__(
-        self, zip_path: Optional[str] = None, folder_path: Optional[str] = None
+            self,
+            zip_path: Optional[str] = None,
+            folder_path: Optional[str] = None,
+            xmlnamespace: Optional[str] = None,
     ):
         """
         Initialize the converter.
@@ -41,7 +44,7 @@ class XmlConverter:
         """
         self.zip_path = zip_path
         self.folder_path = Path(folder_path) if folder_path else None
-        self.parser = XmlParser()
+        self.parser = XmlParser(xmlnamespace)
         self.pages = None
 
     def parse(self) -> None:
@@ -57,13 +60,13 @@ class XmlConverter:
         print(f"Parsed {len(self.pages)} pages")
 
     def convert(
-        self,
-        export_mode: str = "text",
-        window_size: int = 2,
-        overlap: int = 0,
-        split_train: Optional[float] = None,
-        split_seed: Optional[int] = 42,
-        split_shuffle: Optional[bool] = False,
+            self,
+            export_mode: str = "text",
+            window_size: int = 2,
+            overlap: int = 0,
+            split_train: Optional[float] = None,
+            split_seed: Optional[int] = 42,
+            split_shuffle: Optional[bool] = False,
     ) -> Dataset:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -106,7 +109,6 @@ class XmlConverter:
             print(f"Converting to {export_mode} format...")
 
         dataset = exporter.export(self.pages)
-        print(f"Created dataset with {len(dataset)} examples")
 
         if split_train is not None:
             if not (0 < split_train < 1):
