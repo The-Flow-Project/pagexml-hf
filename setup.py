@@ -4,14 +4,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="transkribus-hf",
-    version="0.1.0",
-    author="wjbmattingly",
-    author_email="wjbmattingly@gmail.com",
-    description="Convert Transkribus ZIP files to HuggingFace datasets",
+    name="pagexml-hf",
+    version="0.1.0-fork",
+    author="Jonas Widmer",
+    author_email="jonas.widmer@unibe.ch",
+    description="Fork of transkribus-hf (https://github.com/wjbmattingly/transkribus-hf)"
+                "Convert Transkribus ZIP files or a PageXML export folder (with images) to HuggingFace datasets",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/wjbmattingly/transkribus-hf",
+    url="https://github.com/l0rn0r/pagexml-hf",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -44,7 +45,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "transkribus-hf=transkribus_hf.cli:main",
+            "pagexml-hf=pagexml-hf.cli:main",
         ],
     },
-) 
+)
