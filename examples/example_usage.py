@@ -4,7 +4,7 @@ Example usage of the transkribus-hf package.
 """
 
 from pathlib import Path
-from transkribus_hf import XmlConverter
+from pagexml_hf import XmlConverter
 
 
 def main():

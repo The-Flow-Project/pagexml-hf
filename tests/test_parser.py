@@ -5,7 +5,7 @@ Basic tests for the transkribus-hf parser.
 import unittest
 import xml.etree.ElementTree as ET
 
-from transkribus_hf.parser import XmlParser, PageData
+from pagexml_hf.parser import XmlParser, PageData
 
 
 class TestXmlParser(unittest.TestCase):

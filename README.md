@@ -144,7 +144,7 @@ pagexml-hf path/to/your/transkribus.zip --repo-id username/dataset-name --split_
 ### Python API
 
 ```python
-from transkribus_hf import XmlConverter
+from pagexml_hf import XmlConverter
 
 # Initialize converter
 converter = XmlConverter(zip_path="path/to/your/transkribus.zip")
