@@ -1,9 +1,9 @@
 """
-transkribus-hf: Convert Transkribus ZIP files to HuggingFace datasets
+transkribus-hf: Convert Transkribus ZIP files/Page XML export folder to HuggingFace datasets
 """
 
-from .converter import TranskribusConverter
-from .parser import TranskribusParser
+from .converter import XmlConverter
+from .parser import XmlParser
 from .exporters import (
     RawXMLExporter,
     TextExporter,
@@ -12,15 +12,16 @@ from .exporters import (
     WindowExporter,
 )
 
-__version__ = "0.1.0"
-__author__ = "wjbmattingly"
+__version__ = "0.1.0-fork"
+__license__ = "MIT"
+__authors__ = ["wjbmattingly", "l0rn0r"]
 
 __all__ = [
-    "TranskribusConverter",
-    "TranskribusParser",
+    "XmlConverter",
+    "XmlParser",
     "RawXMLExporter",
-    "TextExporter", 
+    "TextExporter",
     "RegionExporter",
     "LineExporter",
     "WindowExporter",
-] 
+]
