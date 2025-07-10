@@ -90,14 +90,17 @@ class BaseExporter(ABC):
                     return str(path)
         return None
 
-    @staticmethod
     def _crop_region(
+            self,
             image: Image.Image,
             coords: List[Tuple[int, int]],
             mask: bool = False,
+            min_width: Optional[int] = None,
     ) -> Optional[Image.Image]:
         """Crop a region from an image based on coordinates, optimized by pre-cropping to bounding box."""
         if not coords:
+            print("Warning: No coordinates provided for cropping.")
+            self.skipped_count += 1
             return None
 
         try:
@@ -109,6 +112,12 @@ class BaseExporter(ABC):
 
             if min_x >= max_x or min_y >= max_y:
                 print(f"Warning: Invalid crop coordinates: ({min_x}, {min_y}, {max_x}, {max_y})")
+                self.skipped_count += 1
+                return None
+
+            if min_width and int(max_x - min_x) < min_width:
+                print(f"Warning: Bbox too narrow: {max_x - min_x} < {min_width}")
+                self.skipped_count += 1
                 return None
 
             # Bild und Koordinaten auf Bounding Box beschränken
@@ -279,7 +288,12 @@ class TextExporter(BaseExporter):
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
 
-    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
+    def export(
+            self,
+            pages: List[PageData],
+            mask: bool = False,
+            min_width: Optional[int] = None,
+    ) -> Dataset:
         """Export each region as a separate dataset entry."""
 
         def generate_examples():
@@ -289,7 +303,12 @@ class RegionExporter(BaseExporter):
                     full_image = self._load_image(image_path)
                     if full_image:
                         for region in page.regions:
-                            region_image = self._crop_region(full_image, region.coords, mask)
+                            region_image = self._crop_region(
+                                full_image,
+                                region.coords,
+                                mask=mask,
+                                min_width=min_width,
+                            )
                             if region_image:
                                 self.processed_count += 1
                                 yield {
@@ -325,7 +344,12 @@ class RegionExporter(BaseExporter):
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
 
-    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
+    def export(
+            self,
+            pages: List[PageData],
+            mask: bool = False,
+            min_width: Optional[int] = None,
+    ) -> Dataset:
         """Export each text line as a separate dataset entry."""
 
         def generate_examples():
@@ -336,7 +360,12 @@ class LineExporter(BaseExporter):
                     if full_image:
                         for region in page.regions:
                             for line in region.text_lines:
-                                line_image = self._crop_region(full_image, line.coords, mask)
+                                line_image = self._crop_region(
+                                    full_image,
+                                    line.coords,
+                                    mask=mask,
+                                    min_width=min_width,
+                                )
                                 if line_image:
                                     self.processed_count += 1
                                     yield {

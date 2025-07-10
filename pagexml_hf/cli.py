@@ -107,6 +107,13 @@ def main():
         help="Crop the mask from the image (default: False)",
     )
 
+    parser.add_argument(
+        "--min_width",
+        type=int,
+        default=None,
+        help="Minimum width of the cropped region/line (default: None, no minimum)",
+    )
+
     args = parser.parse_args()
 
     # Validate arguments
@@ -125,6 +132,10 @@ def main():
 
     if not args.stats_only and not args.local_only and not args.repo_id:
         print("Error: --repo-id is required unless using --stats-only or --local-only")
+        sys.exit(1)
+
+    if args.min_width is not None and args.min_width <= 0:
+        print("Error: --min_width has to be a positive integer")
         sys.exit(1)
 
     # Validate window parameters
@@ -182,6 +193,7 @@ def main():
             split_seed=args.split_seed,
             split_shuffle=args.split_shuffle,
             mask_crop=args.mask_crop,
+            min_width=args.min_width,
         )
 
         if args.local_only:
