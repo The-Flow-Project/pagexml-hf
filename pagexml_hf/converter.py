@@ -69,6 +69,7 @@ class XmlConverter:
             split_shuffle: Optional[bool] = False,
             mask_crop: Optional[bool] = False,
             min_width: Optional[int] = None,
+            allow_empty: Optional[bool] = False,
     ) -> Dataset:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -82,6 +83,7 @@ class XmlConverter:
             split_shuffle: Whether to shuffle the dataset before splitting
             mask_crop: Whether to crop the mask to polygon (only for region and line mode)
             min_width: Minimum width of the regions/lines to be processed (only for region and line mode)
+            allow_empty: Whether to allow empty elements in the output (default: False)
         Returns:
             HuggingFace Dataset
         """
@@ -115,7 +117,12 @@ class XmlConverter:
         # Export dataset
         if export_mode == "line" or export_mode == "region":
             # For line and region modes, we can apply mask cropping
-            dataset = exporter.export(self.pages, mask=mask_crop, min_width=min_width)
+            dataset = exporter.export(
+                self.pages,
+                mask=mask_crop,
+                min_width=min_width,
+                allow_empty=allow_empty,
+            )
         else:
             dataset = exporter.export(self.pages)
 

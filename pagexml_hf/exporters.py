@@ -6,7 +6,8 @@ import io
 import zipfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
+import requests
 
 from PIL import Image, ImageFile
 import numpy as np
@@ -38,21 +39,27 @@ class BaseExporter(ABC):
         """Export pages to a HuggingFace dataset."""
         pass
 
-    def _load_image(self, image_path: str) -> Optional[Image.Image]:
+    def _load_image(self, image_source: Union[str, Path, io.BytesIO]) -> Optional[Image.Image]:
         """Load an image either from ZIP file or folder with robust error handling."""
         try:
-            if self.zip_path:
-                with zipfile.ZipFile(self.zip_path, "r") as zip_file:
-                    image_data = zip_file.read(image_path)
-            elif self.folder_path:
-                full_path = self.folder_path / image_path
-                image_data = full_path.read_bytes()
+            image_data = None
+            if isinstance(image_source, str):
+                if self.zip_path:
+                    with zipfile.ZipFile(self.zip_path, "r") as zip_file:
+                        image_data = zip_file.read(image_source)
+                elif self.folder_path:
+                    full_path = self.folder_path / image_source
+                    image_data = full_path.read_bytes()
+                buffer = io.BytesIO(image_data)
+            elif isinstance(image_source, io.BytesIO):
+                buffer = image_source
             else:
-                raise ValueError("No input source provided.")
+                raise ValueError(f"Unsupported image source: {type(image_source)}")
 
-            image = Image.open(io.BytesIO(image_data))
+            image = Image.open(buffer)
             image.verify()
-            image = Image.open(io.BytesIO(image_data))
+            buffer.seek(0)
+            image = Image.open(buffer)
 
             if image.mode != "RGB":
                 image = image.convert("RGB")
@@ -60,13 +67,13 @@ class BaseExporter(ABC):
             return self._correct_orientation(image)
 
         except Exception as e:
-            error_msg = f"Error loading image {image_path}: {e}"
+            error_msg = f"Error loading image {image_source}: {e}"
             print(f"Warning: {error_msg}")
-            self.failed_images.append((image_path, str(e)))
+            self.failed_images.append((image_source, str(e)))
             self.skipped_count += 1
             return None
 
-    def _find_image(self, page: PageData) -> Optional[str]:
+    def _find_image(self, page: PageData) -> Optional[Union[str, io.BytesIO]]:
         """Find the image path in the ZIP or folder for a given page."""
         possible_paths = [
             f"{page.project_name}/{page.image_filename}",
@@ -88,6 +95,17 @@ class BaseExporter(ABC):
                 full_path = self.folder_path / path
                 if full_path.is_file():
                     return str(path)
+        if page.image_url:
+            try:
+                response = requests.get(page.image_url, timeout=20)
+                response.raise_for_status()
+                return io.BytesIO(response.content)
+            except requests.exceptions.Timeout:
+                print(f'Image download of {page.image_filename} timed out')
+                return None
+            except requests.exceptions.RequestException as e:
+                print(f'Image download from {page.image_url} failed: {e}')
+                return None
         return None
 
     def _crop_region(
@@ -116,7 +134,6 @@ class BaseExporter(ABC):
                 return None
 
             if min_width and int(max_x - min_x) < min_width:
-                print(f"Warning: Bbox too narrow: {max_x - min_x} < {min_width}")
                 self.skipped_count += 1
                 return None
 
@@ -293,6 +310,7 @@ class RegionExporter(BaseExporter):
             pages: List[PageData],
             mask: bool = False,
             min_width: Optional[int] = None,
+            allow_empty: bool = False,
     ) -> Dataset:
         """Export each region as a separate dataset entry."""
 
@@ -303,23 +321,24 @@ class RegionExporter(BaseExporter):
                     full_image = self._load_image(image_path)
                     if full_image:
                         for region in page.regions:
-                            region_image = self._crop_region(
-                                full_image,
-                                region.coords,
-                                mask=mask,
-                                min_width=min_width,
-                            )
-                            if region_image:
-                                self.processed_count += 1
-                                yield {
-                                    "image": region_image,
-                                    "text": region.full_text,
-                                    "region_type": region.type,
-                                    "region_id": region.id,
-                                    "reading_order": region.reading_order,
-                                    "filename": page.image_filename,
-                                    "project": page.project_name,
-                                }
+                            if region.full_text or allow_empty:
+                                region_image = self._crop_region(
+                                    full_image,
+                                    region.coords,
+                                    mask=mask,
+                                    min_width=min_width,
+                                )
+                                if region_image:
+                                    self.processed_count += 1
+                                    yield {
+                                        "image": region_image,
+                                        "text": region.full_text,
+                                        "region_type": region.type,
+                                        "region_id": region.id,
+                                        "reading_order": region.reading_order,
+                                        "filename": page.image_filename,
+                                        "project": page.project_name,
+                                    }
 
         features = Features(
             {
@@ -349,6 +368,7 @@ class LineExporter(BaseExporter):
             pages: List[PageData],
             mask: bool = False,
             min_width: Optional[int] = None,
+            allow_empty: bool = False,
     ) -> Dataset:
         """Export each text line as a separate dataset entry."""
 
@@ -360,25 +380,26 @@ class LineExporter(BaseExporter):
                     if full_image:
                         for region in page.regions:
                             for line in region.text_lines:
-                                line_image = self._crop_region(
-                                    full_image,
-                                    line.coords,
-                                    mask=mask,
-                                    min_width=min_width,
-                                )
-                                if line_image:
-                                    self.processed_count += 1
-                                    yield {
-                                        "image": line_image,
-                                        "text": line.text,
-                                        "line_id": line.id,
-                                        "line_reading_order": line.reading_order,
-                                        "region_id": line.region_id,
-                                        "region_reading_order": region.reading_order,
-                                        "region_type": region.type,
-                                        "filename": page.image_filename,
-                                        "project": page.project_name,
-                                    }
+                                if line.text or allow_empty:
+                                    line_image = self._crop_region(
+                                        full_image,
+                                        line.coords,
+                                        mask=mask,
+                                        min_width=min_width,
+                                    )
+                                    if line_image:
+                                        self.processed_count += 1
+                                        yield {
+                                            "image": line_image,
+                                            "text": line.text if line.text else "",
+                                            "line_id": line.id,
+                                            "line_reading_order": line.reading_order,
+                                            "region_id": line.region_id,
+                                            "region_reading_order": region.reading_order,
+                                            "region_type": region.type,
+                                            "filename": page.image_filename,
+                                            "project": page.project_name,
+                                        }
 
         features = Features(
             {

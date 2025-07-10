@@ -18,7 +18,7 @@ class TextLine:
     """Represents a text line in the PAGE XML."""
 
     id: str
-    text: str
+    text: Optional[str]
     coords: List[Tuple[int, int]]
     baseline: Optional[List[Tuple[int, int]]]
     reading_order: int
@@ -34,7 +34,7 @@ class TextRegion:
     coords: List[Tuple[int, int]]
     text_lines: List[TextLine]
     reading_order: int
-    full_text: str
+    full_text: Optional[str]
 
 
 @dataclass
@@ -44,6 +44,7 @@ class PageData:
     image_filename: str
     image_width: int
     image_height: int
+    image_url: str
     regions: List[TextRegion]
     xml_content: str
     project_name: str
@@ -239,6 +240,9 @@ class XmlParser:
             image_width = int(page_elem.get("imageWidth", 0))
             image_height = int(page_elem.get("imageHeight", 0))
 
+            # if available, extract image URL
+            image_url = self._parse_imgurl(root)
+
             # Parse reading order
             reading_order = self._parse_reading_order(root)
 
@@ -249,6 +253,7 @@ class XmlParser:
                 image_filename=image_filename,
                 image_width=image_width,
                 image_height=image_height,
+                image_url=image_url,
                 regions=regions,
                 xml_content=xml_content,
                 project_name=project_name,
@@ -366,6 +371,16 @@ class XmlParser:
 
         return lines
 
+    def _parse_imgurl(self, root: ET.Element) -> Optional[str]:
+        """Parse image URL from the PAGE XML."""
+        img_url_elem = root.find(".//pc:TranskribusMetadata", self.namespace)
+        # If from Transkribus, the image URL might be in the TranskribusMetadata element
+        image_url = img_url_elem.get("imgUrl") if img_url_elem is not None else None
+        if not image_url:
+            page_elem = root.find("pc:Page", self.namespace)
+            image_url = page_elem.get("imageURL")
+        return image_url
+
     @staticmethod
     def _get_logical_project_parent(f: str) -> str:
         path = PurePosixPath(f)
@@ -396,12 +411,12 @@ class XmlParser:
 
         return coords
 
-    def _get_text_equiv(self, element: ET.Element) -> str:
+    def _get_text_equiv(self, element: ET.Element) -> Optional[str]:
         """Extract text from TextEquiv/Unicode element."""
         text_equiv = element.find("pc:TextEquiv/pc:Unicode", self.namespace)
         if text_equiv is not None and text_equiv.text:
             return text_equiv.text
-        return ""
+        return None
 
     @staticmethod
     def _extract_reading_order_from_custom(element: ET.Element) -> int:

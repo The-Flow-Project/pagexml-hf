@@ -102,16 +102,22 @@ def main():
     )
 
     parser.add_argument(
-        "--mask_crop",
+        "--mask-crop",
         action="store_true",
         help="Crop the mask from the image (default: False)",
     )
 
     parser.add_argument(
-        "--min_width",
+        "--min-width",
         type=int,
         default=None,
         help="Minimum width of the cropped region/line (default: None, no minimum)",
+    )
+
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow empty regions or lines (default: False)",
     )
 
     args = parser.parse_args()
@@ -135,7 +141,7 @@ def main():
         sys.exit(1)
 
     if args.min_width is not None and args.min_width <= 0:
-        print("Error: --min_width has to be a positive integer")
+        print("Error: --min-width has to be a positive integer")
         sys.exit(1)
 
     # Validate window parameters
@@ -194,6 +200,7 @@ def main():
             split_shuffle=args.split_shuffle,
             mask_crop=args.mask_crop,
             min_width=args.min_width,
+            allow_empty=args.allow_empty,
         )
 
         if args.local_only:
@@ -201,7 +208,7 @@ def main():
             mode_suffix = f"_{args.mode}"
             if args.mode == "window":
                 mode_suffix += f"_w{args.window_size}_o{args.overlap}"
-            output_dir = args.output_dir or f"./transkribus_dataset{mode_suffix}"
+            output_dir = args.output_dir or f"./pagexml_dataset{mode_suffix}"
             dataset.save_to_disk(output_dir)
             print(f"Dataset saved to: {output_dir}")
         else:
