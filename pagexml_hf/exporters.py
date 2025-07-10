@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PIL import Image, ImageFile
+import numpy as np
+import cv2
 from datasets import Dataset, Features, Value, Image as DatasetImage
 
 from .parser import PageData, TextLine
@@ -21,7 +23,9 @@ class BaseExporter(ABC):
     """Base class for all exporters."""
 
     def __init__(
-        self, zip_path: Optional[str] = None, folder_path: Optional[str] = None
+            self,
+            zip_path: Optional[str] = None,
+            folder_path: Optional[str] = None
     ):
         self.zip_path = zip_path
         self.folder_path = Path(folder_path) if folder_path else None
@@ -88,41 +92,49 @@ class BaseExporter(ABC):
 
     @staticmethod
     def _crop_region(
-        image: Image.Image, coords: List[Tuple[int, int]]
+            image: Image.Image,
+            coords: List[Tuple[int, int]],
+            mask: bool = False,
     ) -> Optional[Image.Image]:
-        """Crop a region from an image based on coordinates."""
+        """Crop a region from an image based on coordinates, optimized by pre-cropping to bounding box."""
         if not coords:
             return None
 
         try:
-            # Calculate bounding box
-            x_coords = [coord[0] for coord in coords]
-            y_coords = [coord[1] for coord in coords]
+            # Calculate bounding box for the coordinates
+            x_coords = [pt[0] for pt in coords]
+            y_coords = [pt[1] for pt in coords]
+            min_x, max_x = max(0, min(x_coords)), min(image.width, max(x_coords))
+            min_y, max_y = max(0, min(y_coords)), min(image.height, max(y_coords))
 
-            min_x, max_x = min(x_coords), max(x_coords)
-            min_y, max_y = min(y_coords), max(y_coords)
-
-            # Ensure coordinates are within image bounds
-            min_x = max(0, min_x)
-            min_y = max(0, min_y)
-            max_x = min(image.width, max_x)
-            max_y = min(image.height, max_y)
-
-            # Check if the crop area is valid
             if min_x >= max_x or min_y >= max_y:
-                print(
-                    f"Warning: Invalid crop coordinates: ({min_x}, {min_y}, {max_x}, {max_y})"
-                )
+                print(f"Warning: Invalid crop coordinates: ({min_x}, {min_y}, {max_x}, {max_y})")
                 return None
 
-            return image.crop((min_x, min_y, max_x, max_y))
+            # Bild und Koordinaten auf Bounding Box beschränken
+            image_cropped = image.crop((min_x, min_y, max_x, max_y))
+            shifted_coords = [(x - min_x, y - min_y) for (x, y) in coords]
+            img_array = cv2.cvtColor(np.array(image_cropped), cv2.COLOR_RGB2BGR)
+
+            if mask:
+                mask_img = np.zeros(img_array.shape[:2], dtype=np.uint8)
+                pts = np.array([shifted_coords], dtype=np.int32)
+                cv2.fillPoly(mask_img, pts, 255)
+                white_bg = np.ones_like(img_array, dtype=np.uint8) * 255
+                result = np.where(mask_img[:, :, None] == 255, img_array, white_bg)
+            else:
+                result = img_array
+
+            result_rgb = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+            return Image.fromarray(result_rgb)
+
         except Exception as e:
             print(f"Warning: Error cropping region: {e}")
             return None
 
     @staticmethod
     def _calculate_bounding_box(
-        coords_list: List[List[Tuple[int, int]]],
+            coords_list: List[List[Tuple[int, int]]],
     ) -> List[Tuple[int, int]]:
         """Calculate the bounding box that encompasses multiple coordinate sets."""
         if not coords_list:
@@ -183,6 +195,7 @@ class RawXMLExporter(BaseExporter):
     def export(self, pages: List[PageData]) -> Dataset:
         """Export pages as image + raw XML pairs."""
         print(f"Exporting raw XML content with images... (Processed: {len(pages)})")
+
         def generate_examples():
             """Generate examples from pages with images and XML content."""
             for page in pages:
@@ -266,7 +279,7 @@ class TextExporter(BaseExporter):
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
 
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
         """Export each region as a separate dataset entry."""
 
         def generate_examples():
@@ -276,7 +289,7 @@ class RegionExporter(BaseExporter):
                     full_image = self._load_image(image_path)
                     if full_image:
                         for region in page.regions:
-                            region_image = self._crop_region(full_image, region.coords)
+                            region_image = self._crop_region(full_image, region.coords, mask)
                             if region_image:
                                 self.processed_count += 1
                                 yield {
@@ -312,7 +325,7 @@ class RegionExporter(BaseExporter):
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
 
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
         """Export each text line as a separate dataset entry."""
 
         def generate_examples():
@@ -323,7 +336,7 @@ class LineExporter(BaseExporter):
                     if full_image:
                         for region in page.regions:
                             for line in region.text_lines:
-                                line_image = self._crop_region(full_image, line.coords)
+                                line_image = self._crop_region(full_image, line.coords, mask)
                                 if line_image:
                                     self.processed_count += 1
                                     yield {
@@ -364,11 +377,11 @@ class WindowExporter(BaseExporter):
     """Export sliding windows of text lines with configurable window size and overlap."""
 
     def __init__(
-        self,
-        zip_path: Optional[str] = None,
-        folder_path: Optional[str] = None,
-        window_size: int = 2,
-        overlap: int = 0,
+            self,
+            zip_path: Optional[str] = None,
+            folder_path: Optional[str] = None,
+            window_size: int = 2,
+            overlap: int = 0,
     ):
         """
         Initialize the window exporter.
@@ -386,7 +399,7 @@ class WindowExporter(BaseExporter):
         if overlap >= window_size:
             raise ValueError("Overlap must be less than window size")
 
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
         """Export sliding windows of lines as separate dataset entries."""
 
         def generate_examples():
@@ -408,7 +421,7 @@ class WindowExporter(BaseExporter):
                                         line_coords
                                     )
                                     window_image = self._crop_region(
-                                        full_image, window_coords
+                                        full_image, window_coords, mask
                                     )
                                     if window_image:
                                         # Combine text from all lines in window
@@ -476,9 +489,9 @@ class WindowExporter(BaseExporter):
         step = self.window_size - self.overlap
 
         for i in range(0, len(lines), step):
-            window = lines[i : i + self.window_size]
+            window = lines[i: i + self.window_size]
             if (
-                len(window) > 0
+                    len(window) > 0
             ):  # Always include windows, even if smaller than window_size
                 windows.append(window)
 

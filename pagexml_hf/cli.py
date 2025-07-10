@@ -96,7 +96,15 @@ def main():
 
     parser.add_argument(
         "--output-dir",
+        type=str,
+        default=None,
         help="Directory to save the dataset locally (when using --local-only)",
+    )
+
+    parser.add_argument(
+        "--mask_crop",
+        action="store_true",
+        help="Crop the mask from the image (default: False)",
     )
 
     args = parser.parse_args()
@@ -173,6 +181,7 @@ def main():
             split_train=args.split_train,
             split_seed=args.split_seed,
             split_shuffle=args.split_shuffle,
+            mask_crop=args.mask_crop,
         )
 
         if args.local_only:

@@ -67,6 +67,7 @@ class XmlConverter:
             split_train: Optional[float] = None,
             split_seed: Optional[int] = 42,
             split_shuffle: Optional[bool] = False,
+            mask_crop: Optional[bool] = False,
     ) -> Dataset:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -78,6 +79,7 @@ class XmlConverter:
             split_train: Split train set size (between 0 and 1, e.g. 0.8 for 80% train, 20% test)
             split_seed: Random seed for train/test split
             split_shuffle: Whether to shuffle the dataset before splitting
+            mask_crop: Whether to crop the mask to polygon (only for region and line mode)
         Returns:
             HuggingFace Dataset
         """
@@ -108,7 +110,12 @@ class XmlConverter:
             )
             print(f"Converting to {export_mode} format...")
 
-        dataset = exporter.export(self.pages)
+        # Export dataset
+        if export_mode == "line" or export_mode == "region":
+            # For line and region modes, we can apply mask cropping
+            dataset = exporter.export(self.pages, mask=mask_crop)
+        else:
+            dataset = exporter.export(self.pages)
 
         if split_train is not None:
             if not (0 < split_train < 1):
@@ -123,12 +130,12 @@ class XmlConverter:
         return dataset
 
     def upload_to_hub(
-        self,
-        dataset: Dataset,
-        repo_id: str,
-        token: Optional[str] = None,
-        private: bool = False,
-        commit_message: Optional[str] = None,
+            self,
+            dataset: Dataset,
+            repo_id: str,
+            token: Optional[str] = None,
+            private: bool = False,
+            commit_message: Optional[str] = None,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub.
@@ -191,17 +198,17 @@ class XmlConverter:
         return repo_url
 
     def convert_and_upload(
-        self,
-        repo_id: str,
-        export_mode: str = "text",
-        token: Optional[str] = None,
-        private: bool = False,
-        commit_message: Optional[str] = None,
-        window_size: int = 2,
-        overlap: int = 0,
-        split_train: Optional[float] = None,
-        split_seed: Optional[int] = 42,
-        split_shuffle: Optional[bool] = False,
+            self,
+            repo_id: str,
+            export_mode: str = "text",
+            token: Optional[str] = None,
+            private: bool = False,
+            commit_message: Optional[str] = None,
+            window_size: int = 2,
+            overlap: int = 0,
+            split_train: Optional[float] = None,
+            split_seed: Optional[int] = 42,
+            split_shuffle: Optional[bool] = False,
     ) -> str:
         """
         Convert and upload in one step.
