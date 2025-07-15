@@ -182,17 +182,24 @@ class BaseExporter(ABC):
         # Return as rectangle coordinates
         return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
 
-    def _print_summary(self):
+    def _print_summary(self, dataset: Optional[Dataset] = None) -> None:
         """Print processing summary."""
-        print("\nProcessing Summary:")
-        print(f"  Successfully processed: {self.processed_count}")
-        print(f"  Skipped due to errors: {self.skipped_count}")
-        if self.failed_images:
-            print("  Failed images:")
-            for image_path, error in self.failed_images[:5]:  # Show first 5 errors
-                print(f"    {image_path}: {error}")
-            if len(self.failed_images) > 5:
-                print(f"    ... and {len(self.failed_images) - 5} more")
+        print("#" * 60)
+        if not dataset:
+            print("No dataset created.")
+            return
+        elif self.processed_count == 0 and self.skipped_count == 0:
+            print("⚠️ No new items processed — dataset likely loaded from cache.")
+        else:
+            print("\nProcessing Summary:")
+            print(f"  Successfully processed: {self.processed_count}")
+            print(f"  Skipped due to errors: {self.skipped_count}")
+            if self.failed_images:
+                print("  Failed images:")
+                for image_path, error in self.failed_images[:5]:  # Show first 5 errors
+                    print(f"    {image_path}: {error}")
+                if len(self.failed_images) > 5:
+                    print(f"    ... and {len(self.failed_images) - 5} more")
 
     @staticmethod
     def _correct_orientation(image: Image.Image) -> Image.Image:
@@ -218,7 +225,7 @@ class BaseExporter(ABC):
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
 
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData]) -> Union[Dataset, None]:
         """Export pages as image + raw XML pairs."""
         print(f"Exporting raw XML content with images... (Processed: {len(pages)})")
 
@@ -249,11 +256,15 @@ class RawXMLExporter(BaseExporter):
             }
         )
 
-        dataset = Dataset.from_generator(
-            generate_examples, features=features, cache_dir=None
-        )
+        try:
+            dataset = Dataset.from_generator(
+                generate_examples, features=features, cache_dir=None
+            )
+        except Exception as e:
+            print(f"Error creating dataset: {e}")
+            dataset = None
 
-        self._print_summary()
+        self._print_summary(dataset)
         return dataset
 
 
@@ -294,11 +305,15 @@ class TextExporter(BaseExporter):
             }
         )
 
-        dataset = Dataset.from_generator(
-            generate_examples, features=features, cache_dir=None
-        )
+        try:
+            dataset = Dataset.from_generator(
+                generate_examples, features=features, cache_dir=None
+            )
+        except Exception as e:
+            print(f"Error creating dataset: {e}")
+            dataset = None
 
-        self._print_summary()
+        self._print_summary(dataset)
         return dataset
 
 
@@ -352,11 +367,15 @@ class RegionExporter(BaseExporter):
             }
         )
 
-        dataset = Dataset.from_generator(
-            generate_examples, features=features, cache_dir=None
-        )
+        try:
+            dataset = Dataset.from_generator(
+                generate_examples, features=features, cache_dir=None
+            )
+        except Exception as e:
+            print(f"Error creating dataset: {e}")
+            dataset = None
 
-        self._print_summary()
+        self._print_summary(dataset)
         return dataset
 
 
@@ -415,11 +434,15 @@ class LineExporter(BaseExporter):
             }
         )
 
-        dataset = Dataset.from_generator(
-            generate_examples, features=features, cache_dir=None
-        )
+        try:
+            dataset = Dataset.from_generator(
+                generate_examples, features=features, cache_dir=None
+            )
+        except Exception as e:
+            print(f"Error creating dataset: {e}")
+            dataset = None
 
-        self._print_summary()
+        self._print_summary(dataset)
         return dataset
 
 
@@ -521,13 +544,15 @@ class WindowExporter(BaseExporter):
             }
         )
 
-        dataset = Dataset.from_generator(
-            generate_examples,
-            features=features,
-            cache_dir=None,  # Disable caching to save memory
-        )
+        try:
+            dataset = Dataset.from_generator(
+                generate_examples, features=features, cache_dir=None
+            )
+        except Exception as e:
+            print(f"Error creating dataset: {e}")
+            dataset = None
 
-        self._print_summary()
+        self._print_summary(dataset)
         return dataset
 
     def _create_windows(self, lines: List[TextLine]) -> List[List[TextLine]]:
