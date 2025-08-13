@@ -1,11 +1,14 @@
 # PageXML-HF (fork from wjbmattingly/transkribus-hf)
 
-Convert Transkribus ZIP files or local folders with exported XMLs and images to HuggingFace datasets with ease.
+Convert (Transkribus) ZIP files (containing XML and images)
+or local folders with exported XMLs and images
+or HuggingFace datasets/`datasets.Dataset` with raw-xml and page-images
+to HuggingFace datasets with ease.
 
 ## Overview
 
-`pagexml-hf` is a Python package that converts Transkribus export ZIP files or local folders with
-exported XMLs and images into HuggingFace datasets.
+`pagexml-hf` is a Python package that converts (Transkribus) export ZIP files, local folders with
+exported XMLs and images, or datasets.Dataset (with columns "xml" and "image") into HuggingFace datasets.
 It supports multiple export formats and can automatically upload datasets to the HuggingFace Hub.
 It is a fork of the original `transkribus-hf` package by wjbmattingly (https://github.com/wjbmattingly/transkribus-hf)
 
@@ -22,7 +25,7 @@ It is a fork of the original `transkribus-hf` package by wjbmattingly (https://g
 ## Installation
 
 ```bash
-git clone https://github.com/l0rn0r/pagexml-hf.git
+git clone https://github.com/The-Flow-Project/pagexml-hf
 cd pagexml-hf
 pip install -e .
 ```
@@ -144,10 +147,19 @@ pagexml-hf path/to/your/transkribus.zip --repo-id username/dataset-name --split_
 ### Python API
 
 ```python
-from pagexml_hf import XmlConverter
+from pagexml_hf import XmlConverter, XmlParser
+
+parser = XmlParser()
+pages = parser.parse_zip(zip_path="path/to/your/transkribus.zip")
+# or parse a local folder with XMLs and images
+# pages = parser.parse_folder(folder_path="path/to/your/xml_export")
+# or parse a HuggingFace dataset with raw XML and page images
+# pages = parser.parse_dataset(dataset)
+# or from huggingface hub
+# pages = parser.parse_hf_dataset(dataset_repo="username/dataset-name")
 
 # Initialize converter
-converter = XmlConverter(zip_path="path/to/your/transkribus.zip")
+converter = XmlConverter(pages)
 
 # Get statistics
 stats = converter.get_stats()
@@ -183,7 +195,7 @@ print(f"Dataset uploaded: {repo_url}")
 
 # Convert and upload in one step
 repo_url = converter.convert_and_upload(
-    repo_id="wjbmattingly/my-transkribus-dataset",
+    repo_id="username/my-transkribus-dataset",
     export_mode="window",
     window_size=2,
     overlap=1,
