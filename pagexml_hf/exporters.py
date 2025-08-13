@@ -114,6 +114,7 @@ class BaseExporter(ABC):
             coords: List[Tuple[int, int]],
             mask: bool = False,
             min_width: Optional[int] = None,
+            min_height: Optional[int] = None,
     ) -> Optional[Image.Image]:
         """Crop a region from an image based on coordinates, optimized by pre-cropping to bounding box."""
         if not coords:
@@ -134,6 +135,10 @@ class BaseExporter(ABC):
                 return None
 
             if min_width and int(max_x - min_x) < min_width:
+                self.skipped_count += 1
+                return None
+
+            if min_height and int(max_y - min_y) < min_height:
                 self.skipped_count += 1
                 return None
 
@@ -325,6 +330,7 @@ class RegionExporter(BaseExporter):
             pages: List[PageData],
             mask: bool = False,
             min_width: Optional[int] = None,
+            min_height: Optional[int] = None,
             allow_empty: bool = False,
     ) -> Dataset:
         """Export each region as a separate dataset entry."""
@@ -342,6 +348,7 @@ class RegionExporter(BaseExporter):
                                     region.coords,
                                     mask=mask,
                                     min_width=min_width,
+                                    min_height=min_height,
                                 )
                                 if region_image:
                                     self.processed_count += 1
@@ -387,6 +394,7 @@ class LineExporter(BaseExporter):
             pages: List[PageData],
             mask: bool = False,
             min_width: Optional[int] = None,
+            min_height: Optional[int] = None,
             allow_empty: bool = False,
     ) -> Dataset:
         """Export each text line as a separate dataset entry."""
@@ -405,6 +413,7 @@ class LineExporter(BaseExporter):
                                         line.coords,
                                         mask=mask,
                                         min_width=min_width,
+                                        min_height=min_height,
                                     )
                                     if line_image:
                                         self.processed_count += 1
