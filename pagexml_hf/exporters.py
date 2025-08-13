@@ -2,12 +2,8 @@
 Exporters for converting parsed Transkribus data to different HuggingFace dataset formats.
 """
 
-import io
-import zipfile
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import List, Optional, Tuple, Union
-import requests
 
 from PIL import Image, ImageFile
 import numpy as np
@@ -25,11 +21,9 @@ class BaseExporter(ABC):
 
     def __init__(
             self,
-            zip_path: Optional[str] = None,
-            folder_path: Optional[str] = None
+            pages: List[PageData],
     ):
-        self.zip_path = zip_path
-        self.folder_path = Path(folder_path) if folder_path else None
+        self.pages = pages
         self.failed_images = []
         self.processed_count = 0
         self.skipped_count = 0
@@ -38,75 +32,6 @@ class BaseExporter(ABC):
     def export(self, pages: List[PageData]) -> Dataset:
         """Export pages to a HuggingFace dataset."""
         pass
-
-    def _load_image(self, image_source: Union[str, Path, io.BytesIO]) -> Optional[Image.Image]:
-        """Load an image either from ZIP file or folder with robust error handling."""
-        try:
-            image_data = None
-            if isinstance(image_source, str):
-                if self.zip_path:
-                    with zipfile.ZipFile(self.zip_path, "r") as zip_file:
-                        image_data = zip_file.read(image_source)
-                elif self.folder_path:
-                    full_path = self.folder_path / image_source
-                    image_data = full_path.read_bytes()
-                buffer = io.BytesIO(image_data)
-            elif isinstance(image_source, io.BytesIO):
-                buffer = image_source
-            else:
-                raise ValueError(f"Unsupported image source: {type(image_source)}")
-
-            image = Image.open(buffer)
-            image.verify()
-            buffer.seek(0)
-            image = Image.open(buffer)
-
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-
-            return self._correct_orientation(image)
-
-        except Exception as e:
-            error_msg = f"Error loading image {image_source}: {e}"
-            print(f"Warning: {error_msg}")
-            self.failed_images.append((image_source, str(e)))
-            self.skipped_count += 1
-            return None
-
-    def _find_image(self, page: PageData) -> Optional[Union[str, io.BytesIO]]:
-        """Find the image path in the ZIP or folder for a given page."""
-        possible_paths = [
-            f"{page.project_name}/{page.image_filename}",
-            f"{page.project_name}/images/{page.image_filename}",
-            page.image_filename,
-        ]
-
-        if self.zip_path:
-            with zipfile.ZipFile(self.zip_path, "r") as zip_file:
-                file_list = zip_file.namelist()
-                for path in possible_paths:
-                    if path in file_list:
-                        return path
-                for file_path in file_list:
-                    if file_path.endswith(page.image_filename):
-                        return file_path
-        elif self.folder_path:
-            for path in possible_paths:
-                full_path = self.folder_path / path
-                if full_path.is_file():
-                    return str(path)
-        if page.image_url:
-            try:
-                response = requests.get(page.image_url, timeout=20)
-                response.raise_for_status()
-                return io.BytesIO(response.content)
-            except requests.exceptions.Timeout:
-                print(f'Image download of {page.image_filename} timed out')
-                return None
-            except requests.exceptions.RequestException as e:
-                print(f'Image download from {page.image_url} failed: {e}')
-                return None
-        return None
 
     def _crop_region(
             self,
@@ -206,26 +131,6 @@ class BaseExporter(ABC):
                 if len(self.failed_images) > 5:
                     print(f"    ... and {len(self.failed_images) - 5} more")
 
-    @staticmethod
-    def _correct_orientation(image: Image.Image) -> Image.Image:
-        try:
-            exif = image.getexif()
-
-            if exif:
-                # key 274 = orientation, returns 1 if not existing
-                orientation = exif.get(274, 1)
-
-                if orientation == 3:
-                    image = image.rotate(180, expand=True)
-                elif orientation == 6:
-                    image = image.rotate(270, expand=True)
-                elif orientation == 8:
-                    image = image.rotate(90, expand=True)
-        except (AttributeError, KeyError, IndexError):
-            pass
-
-        return image
-
 
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
@@ -237,20 +142,18 @@ class RawXMLExporter(BaseExporter):
         def generate_examples():
             """Generate examples from pages with images and XML content."""
             for page in pages:
-                image_path = self._find_image(page)
-                if not image_path:
-                    print(f"Warning: No image found for {page.image_filename} in project {page.project_name}")
-                    continue
-                if image_path:
-                    image = self._load_image(image_path)
-                    if image:
-                        self.processed_count += 1
-                        yield {
-                            "image": image,
-                            "xml": page.xml_content,
-                            "filename": page.image_filename,
-                            "project": page.project_name,
-                        }
+                image = page.image
+                if image:
+                    self.processed_count += 1
+                    yield {
+                        "image": image,
+                        "xml": page.xml_content,
+                        "filename": page.image_filename,
+                        "project": page.project_name,
+                    }
+                else:
+                    self.skipped_count += 1
+                    self.failed_images.append(page.image_filename)
 
         features = Features(
             {
@@ -263,7 +166,7 @@ class RawXMLExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_generator(
-                generate_examples, features=features, cache_dir=None
+                generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
             print(f"Error creating dataset: {e}")
@@ -280,26 +183,30 @@ class TextExporter(BaseExporter):
         """Export pages as image + full text pairs."""
 
         def generate_examples():
+            """
+            Generator for dataset creation.
+            """
             for page in pages:
-                image_path = self._find_image(page)
-                if image_path:
-                    image = self._load_image(image_path)
-                    if image:
-                        # Concatenate all text from regions in reading order
-                        full_text = "\n".join(
-                            [
-                                region.full_text
-                                for region in page.regions
-                                if region.full_text
-                            ]
-                        )
-                        self.processed_count += 1
-                        yield {
-                            "image": image,
-                            "text": full_text,
-                            "filename": page.image_filename,
-                            "project": page.project_name,
-                        }
+                image = page.image
+                if image:
+                    # Concatenate all text from regions in reading order
+                    full_text = "\n".join(
+                        [
+                            region.full_text
+                            for region in page.regions
+                            if region.full_text
+                        ]
+                    )
+                    self.processed_count += 1
+                    yield {
+                        "image": image,
+                        "text": full_text,
+                        "filename": page.image_filename,
+                        "project": page.project_name,
+                    }
+                else:
+                    self.skipped_count += 1
+                    self.failed_images.append(page.image_filename)
 
         features = Features(
             {
@@ -312,7 +219,7 @@ class TextExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_generator(
-                generate_examples, features=features, cache_dir=None
+                generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
             print(f"Error creating dataset: {e}")
@@ -336,31 +243,35 @@ class RegionExporter(BaseExporter):
         """Export each region as a separate dataset entry."""
 
         def generate_examples():
+            """
+            Generator for dataset creation.
+            """
             for page in pages:
-                image_path = self._find_image(page)
-                if image_path:
-                    full_image = self._load_image(image_path)
-                    if full_image:
-                        for region in page.regions:
-                            if region.full_text or allow_empty:
-                                region_image = self._crop_region(
-                                    full_image,
-                                    region.coords,
-                                    mask=mask,
-                                    min_width=min_width,
-                                    min_height=min_height,
-                                )
-                                if region_image:
-                                    self.processed_count += 1
-                                    yield {
-                                        "image": region_image,
-                                        "text": region.full_text,
-                                        "region_type": region.type,
-                                        "region_id": region.id,
-                                        "reading_order": region.reading_order,
-                                        "filename": page.image_filename,
-                                        "project": page.project_name,
-                                    }
+                full_image = page.image
+                if full_image:
+                    for region in page.regions:
+                        if region.full_text or allow_empty:
+                            region_image = self._crop_region(
+                                full_image,
+                                region.coords,
+                                mask=mask,
+                                min_width=min_width,
+                                min_height=min_height,
+                            )
+                            if region_image:
+                                self.processed_count += 1
+                                yield {
+                                    "image": region_image,
+                                    "text": region.full_text,
+                                    "region_type": region.type,
+                                    "region_id": region.id,
+                                    "reading_order": region.reading_order,
+                                    "filename": page.image_filename,
+                                    "project": page.project_name,
+                                }
+                else:
+                    self.skipped_count += 1
+                    self.failed_images.append(page.image_filename)
 
         features = Features(
             {
@@ -376,7 +287,7 @@ class RegionExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_generator(
-                generate_examples, features=features, cache_dir=None
+                generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
             print(f"Error creating dataset: {e}")
@@ -400,34 +311,38 @@ class LineExporter(BaseExporter):
         """Export each text line as a separate dataset entry."""
 
         def generate_examples():
+            """
+            Generator for dataset creation.
+            """
             for page in pages:
-                image_path = self._find_image(page)
-                if image_path:
-                    full_image = self._load_image(image_path)
-                    if full_image:
-                        for region in page.regions:
-                            for line in region.text_lines:
-                                if line.text or allow_empty:
-                                    line_image = self._crop_region(
-                                        full_image,
-                                        line.coords,
-                                        mask=mask,
-                                        min_width=min_width,
-                                        min_height=min_height,
-                                    )
-                                    if line_image:
-                                        self.processed_count += 1
-                                        yield {
-                                            "image": line_image,
-                                            "text": line.text if line.text else "",
-                                            "line_id": line.id,
-                                            "line_reading_order": line.reading_order,
-                                            "region_id": line.region_id,
-                                            "region_reading_order": region.reading_order,
-                                            "region_type": region.type,
-                                            "filename": page.image_filename,
-                                            "project": page.project_name,
-                                        }
+                full_image = page.image
+                if full_image:
+                    for region in page.regions:
+                        for line in region.text_lines:
+                            if line.text or allow_empty:
+                                line_image = self._crop_region(
+                                    full_image,
+                                    line.coords,
+                                    mask=mask,
+                                    min_width=min_width,
+                                    min_height=min_height,
+                                )
+                                if line_image:
+                                    self.processed_count += 1
+                                    yield {
+                                        "image": line_image,
+                                        "text": line.text if line.text else "",
+                                        "line_id": line.id,
+                                        "line_reading_order": line.reading_order,
+                                        "region_id": line.region_id,
+                                        "region_reading_order": region.reading_order,
+                                        "region_type": region.type,
+                                        "filename": page.image_filename,
+                                        "project": page.project_name,
+                                    }
+                else:
+                    self.skipped_count += 1
+                    self.failed_images.append(page.image_filename)
 
         features = Features(
             {
@@ -445,7 +360,7 @@ class LineExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_generator(
-                generate_examples, features=features, cache_dir=None
+                generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
             print(f"Error creating dataset: {e}")
@@ -460,8 +375,7 @@ class WindowExporter(BaseExporter):
 
     def __init__(
             self,
-            zip_path: Optional[str] = None,
-            folder_path: Optional[str] = None,
+            pages: List[PageData],
             window_size: int = 2,
             overlap: int = 0,
     ):
@@ -469,12 +383,11 @@ class WindowExporter(BaseExporter):
         Initialize the window exporter.
 
         Args:
-            zip_path: Path to the ZIP file
-            folder_path: Path to the folder containing images
+            pages: The PagesData list to export.
             window_size: Number of lines per window (1, 2, 3, etc.)
             overlap: Number of lines to overlap between windows
         """
-        super().__init__(zip_path=zip_path, folder_path=folder_path)
+        super().__init__(pages=pages)
         self.window_size = window_size
         self.overlap = overlap
 
@@ -485,56 +398,60 @@ class WindowExporter(BaseExporter):
         """Export sliding windows of lines as separate dataset entries."""
 
         def generate_examples():
+            """
+            Generator for dataset creation.
+            """
             for page in pages:
-                image_path = self._find_image(page)
-                if image_path:
-                    full_image = self._load_image(image_path)
-                    if full_image:
-                        for region in page.regions:
-                            # Generate sliding windows for this region
-                            windows = self._create_windows(region.text_lines)
-                            for window_idx, window_lines in enumerate(windows):
-                                # Calculate bounding box for all lines in this window
-                                line_coords = [
-                                    line.coords for line in window_lines if line.coords
-                                ]
-                                if line_coords:
-                                    window_coords = self._calculate_bounding_box(
-                                        line_coords
-                                    )
-                                    window_image = self._crop_region(
-                                        full_image, window_coords, mask
-                                    )
-                                    if window_image:
-                                        # Combine text from all lines in window
-                                        window_text = "\n".join(
-                                            [
-                                                line.text
-                                                for line in window_lines
-                                                if line.text
-                                            ]
-                                        )
-                                        # Create line info for metadata
-                                        line_ids = [line.id for line in window_lines]
-                                        line_orders = [
-                                            line.reading_order for line in window_lines
+                full_image = page.image
+                if full_image:
+                    for region in page.regions:
+                        # Generate sliding windows for this region
+                        windows = self._create_windows(region.text_lines)
+                        for window_idx, window_lines in enumerate(windows):
+                            # Calculate bounding box for all lines in this window
+                            line_coords = [
+                                line.coords for line in window_lines if line.coords
+                            ]
+                            if line_coords:
+                                window_coords = self._calculate_bounding_box(
+                                    line_coords
+                                )
+                                window_image = self._crop_region(
+                                    full_image, window_coords, mask
+                                )
+                                if window_image:
+                                    # Combine text from all lines in window
+                                    window_text = "\n".join(
+                                        [
+                                            line.text
+                                            for line in window_lines
+                                            if line.text
                                         ]
-                                        self.processed_count += 1
-                                        yield {
-                                            "image": window_image,
-                                            "text": window_text,
-                                            "window_size": len(window_lines),
-                                            "window_index": window_idx,
-                                            "line_ids": ", ".join(line_ids),
-                                            "line_reading_orders": ", ".join(
-                                                map(str, line_orders)
-                                            ),
-                                            "region_id": region.id,
-                                            "region_reading_order": region.reading_order,
-                                            "region_type": region.type,
-                                            "filename": page.image_filename,
-                                            "project": page.project_name,
-                                        }
+                                    )
+                                    # Create line info for metadata
+                                    line_ids = [line.id for line in window_lines]
+                                    line_orders = [
+                                        line.reading_order for line in window_lines
+                                    ]
+                                    self.processed_count += 1
+                                    yield {
+                                        "image": window_image,
+                                        "text": window_text,
+                                        "window_size": len(window_lines),
+                                        "window_index": window_idx,
+                                        "line_ids": ", ".join(line_ids),
+                                        "line_reading_orders": ", ".join(
+                                            map(str, line_orders)
+                                        ),
+                                        "region_id": region.id,
+                                        "region_reading_order": region.reading_order,
+                                        "region_type": region.type,
+                                        "filename": page.image_filename,
+                                        "project": page.project_name,
+                                    }
+                else:
+                    self.skipped_count += 1
+                    self.failed_images.append(page.image_filename)
 
         # Create dataset using generator to avoid memory issues
         features = Features(
@@ -555,7 +472,7 @@ class WindowExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_generator(
-                generate_examples, features=features, cache_dir=None
+                generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
             print(f"Error creating dataset: {e}")

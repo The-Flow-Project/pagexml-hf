@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="pagexml-hf",
-    version="0.1.0+fork.1",
+    version="0.2.0+fork.1",
     author="Jonas Widmer",
     author_email="jonas.widmer@unibe.ch",
     description="Fork of transkribus-hf (https://github.com/wjbmattingly/transkribus-hf)"
