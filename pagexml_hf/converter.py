@@ -2,13 +2,13 @@
 Main converter class for Transkribus to HuggingFace datasets.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 from datasets import Dataset
 from huggingface_hub import create_repo, get_token
 import os
 
-from .parser import XmlParser
+from .parser import PageData
 from .exporters import (
     RawXMLExporter,
     TextExporter,
@@ -31,33 +31,25 @@ class XmlConverter:
 
     def __init__(
             self,
-            zip_path: Optional[str] = None,
-            folder_path: Optional[str] = None,
-            xmlnamespace: Optional[str] = None,
+            pages: List[PageData],
+            source_path: Optional[str] = None,
+            source_type: Optional[str] = None,
     ):
         """
         Initialize the converter.
 
         Args:
-            zip_path: Path to the Transkribus ZIP file
-            folder_path: Path to the folder containing XML files (if not using ZIP)
+            pages (PageData): Pages data to convert.
         """
-        self.zip_path = zip_path
-        self.folder_path = Path(folder_path) if folder_path else None
-        self.parser = XmlParser(xmlnamespace)
-        self.pages = None
-
-    def parse(self) -> None:
-        """Parse the ZIP file or folder and extract all page data."""
-        if self.zip_path:
-            print(f"Parsing ZIP file: {self.zip_path}")
-            self.pages = self.parser.parse_zip(self.zip_path)
-        elif self.folder_path:
-            print(f"Parsing folder: {self.folder_path}")
-            self.pages = self.parser.parse_folder(str(self.folder_path))
+        self.pages = pages
+        if source_type is 'huggingface':
+            self.source_name = source_path
+        elif source_type in ['zip', 'local']:
+            self.source_name = Path(source_path).name
         else:
-            raise ValueError("Either zip_path or folder_path must be provided")
-        print(f"Parsed {len(self.pages)} pages")
+            raise ValueError(
+                f"Invalid source type: {source_type}. Must be 'zip', 'local', or 'huggingface'."
+            )
 
     def convert(
             self,
@@ -89,9 +81,6 @@ class XmlConverter:
         Returns:
             HuggingFace Dataset
         """
-        if self.pages is None:
-            self.parse()
-
         if export_mode not in self.EXPORT_MODES:
             raise ValueError(
                 f"Invalid export mode: {export_mode}. Available modes: {list(self.EXPORT_MODES.keys())}"
@@ -102,8 +91,7 @@ class XmlConverter:
         # Handle both zip and folder path for exporters
         if export_mode == "window":
             exporter = exporter_class(
-                zip_path=self.zip_path,
-                folder_path=self.folder_path,
+                pages=self.pages,
                 window_size=window_size,
                 overlap=overlap,
             )
@@ -112,7 +100,7 @@ class XmlConverter:
             )
         else:
             exporter = exporter_class(
-                zip_path=self.zip_path, folder_path=self.folder_path
+                pages=self.pages,
             )
             print(f"Converting to {export_mode} format...")
 
@@ -200,7 +188,7 @@ class XmlConverter:
 
         # Upload dataset
         if commit_message is None:
-            commit_message = f"Upload Transkribus dataset from {Path(self.zip_path or self.folder_path).name}"
+            commit_message = f"Upload Transkribus dataset from {self.source_name}"
 
         print(f"Uploading dataset to {repo_id}...")
         dataset.push_to_hub(repo_id=repo_id, token=token, commit_message=commit_message)
@@ -262,9 +250,6 @@ class XmlConverter:
         Returns:
             Dictionary with statistics
         """
-        if self.pages is None:
-            self.parse()
-
         total_regions = sum(len(page.regions) for page in self.pages)
         total_lines = sum(
             len(region.text_lines) for page in self.pages for region in page.regions

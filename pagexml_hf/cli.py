@@ -3,10 +3,44 @@ Command-line interface for transkribus-hf.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from datasets import get_dataset_config_names
+from datasets.utils.logging import disable_progress_bar, enable_progress_bar
 
 from .converter import XmlConverter
+from .parser import XmlParser
+
+class SourcePathAction(argparse.Action):
+    """Custom action to handle source path validation."""
+    disable_progress_bar()
+
+    def __call__(self, parser, namespace, value, option_string=None):
+        token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
+        path = Path(value)
+        if path.exists():
+            if path.is_dir():
+                setattr(namespace, self.dest, (str(path), 'local'))
+            else:
+                setattr(namespace, self.dest, (str(path), 'zip'))
+            return
+
+        if '/' in value and len(value.split('/')) == 2:
+            if not token:
+                parser.error('HuggingFace token is required for remote dataset input.')
+            try:
+                configs = get_dataset_config_names(value)
+                enable_progress_bar()
+                if not configs:
+                    raise ValueError()
+            except Exception as e:
+                parser.error(f"Hugging Face dataset '{value}' not found or inaccessible: {e}")
+
+            setattr(namespace, self.dest, (value, 'huggingface'))
+            return
+
+        parser.error(f"Invalid source path: {value}. Must be a local path or a HuggingFace dataset ID.")
 
 
 def main():
@@ -17,6 +51,7 @@ def main():
 
     parser.add_argument(
         "source_path",
+        action=SourcePathAction,
         help="Path to the Transkribus ZIP file or folder containing XML files and images",
     )
 
@@ -128,20 +163,7 @@ def main():
     )
 
     args = parser.parse_args()
-
-    # Validate arguments
-    if not Path(args.source_path).exists():
-        print(f"Error: Source path does not exist: {args.source_path}")
-        sys.exit(1)
-
-    if Path(args.source_path).is_dir():
-        # If source_path is a directory, assume it contains XML files and images
-        zip_path = None
-        folder_path = Path(args.source_path)
-    else:
-        # If source_path is a file, assume it's a ZIP file
-        zip_path = Path(args.source_path)
-        folder_path = None
+    source_path, source_type = args.source_path
 
     if not args.stats_only and not args.local_only and not args.repo_id:
         print("Error: --repo-id is required unless using --stats-only or --local-only")
@@ -167,11 +189,24 @@ def main():
             print("Error: --overlap must be less than --window-size")
             sys.exit(1)
 
+    # Initialize parser
+    parser = XmlParser(namespace=args.namespace)
+
+    if source_type == 'local':
+        pages = parser.parse_folder(source_path)
+    elif source_type == 'zip':
+        pages = parser.parse_zip(source_path)
+    elif source_type == 'huggingface':
+        pages = parser.parse_dataset(source_path)
+    else:
+        print(f"Error: Unsupported source")
+        sys.exit(1)
+
     # Initialize converter
     converter = XmlConverter(
-        zip_path=str(zip_path) if zip_path else None,
-        folder_path=str(folder_path) if folder_path else None,
-        xmlnamespace=str(args.namespace) if args.namespace else None,
+        pages=pages,
+        source_path=source_path,
+        source_type=source_type,
     )
 
     # Show statistics if requested
