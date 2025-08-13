@@ -115,6 +115,13 @@ def main():
     )
 
     parser.add_argument(
+        "--min-height",
+        type=int,
+        default=None,
+        help="Minimum height of the cropped region/line (default: None, no minimum)",
+    )
+
+    parser.add_argument(
         "--allow-empty",
         action="store_true",
         help="Allow empty regions or lines (default: False)",
@@ -142,6 +149,10 @@ def main():
 
     if args.min_width is not None and args.min_width <= 0:
         print("Error: --min-width has to be a positive integer")
+        sys.exit(1)
+
+    if args.min_height is not None and args.min_height <= 0:
+        print("Error: --min-height has to be a positive integer")
         sys.exit(1)
 
     # Validate window parameters
@@ -178,7 +189,7 @@ def main():
         if args.mode == "window":
             step = args.window_size - args.overlap
             estimated_windows = 0
-            for stat in ["total_regions"]:  # This is a rough estimate
+            for _ in ["total_regions"]:  # This is a rough estimate
                 regions_with_lines = stats["total_lines"] // 5  # rough estimate
                 estimated_windows += (
                         max(0, regions_with_lines - args.window_size + 1) // step
@@ -200,6 +211,7 @@ def main():
             split_shuffle=args.split_shuffle,
             mask_crop=args.mask_crop,
             min_width=args.min_width,
+            min_height=args.min_height,
             allow_empty=args.allow_empty,
         )
 

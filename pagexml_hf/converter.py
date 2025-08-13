@@ -69,6 +69,7 @@ class XmlConverter:
             split_shuffle: Optional[bool] = False,
             mask_crop: Optional[bool] = False,
             min_width: Optional[int] = None,
+            min_height: Optional[int] = None,
             allow_empty: Optional[bool] = False,
     ) -> Dataset:
         """
@@ -83,6 +84,7 @@ class XmlConverter:
             split_shuffle: Whether to shuffle the dataset before splitting
             mask_crop: Whether to crop the mask to polygon (only for region and line mode)
             min_width: Minimum width of the regions/lines to be processed (only for region and line mode)
+            min_height: Minimum height of the regions/lines to be processed (only for region and line mode)
             allow_empty: Whether to allow empty elements in the output (default: False)
         Returns:
             HuggingFace Dataset
@@ -121,6 +123,7 @@ class XmlConverter:
                 self.pages,
                 mask=mask_crop,
                 min_width=min_width,
+                min_height=min_height,
                 allow_empty=allow_empty,
             )
         else:
