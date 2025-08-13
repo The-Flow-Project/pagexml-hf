@@ -197,6 +197,7 @@ def main():
 
     # Initialize parser
     parser = XmlParser(namespace=args.namespace)
+    pages = None
 
     if source_type == 'local':
         pages = parser.parse_folder(source_path)

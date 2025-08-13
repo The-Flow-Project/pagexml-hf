@@ -8,6 +8,7 @@ import io
 import requests
 import xml.etree.ElementTree as ET
 import zipfile
+import datasets
 from datasets import load_dataset
 from dataclasses import dataclass
 from PIL import Image
@@ -174,12 +175,12 @@ class XmlParser:
 
         return pages
 
-    def parse_dataset(self, dataset: str, token: Optional[str] = None) -> List[PageData]:
+    def parse_dataset(self, dataset: Union[str, datasets.Dataset], token: Optional[str] = None) -> List[PageData]:
         """
         Parse a HuggingFace dataset containing PAGE XML files.
 
         Args:
-            dataset: HuggingFace dataset ID
+            dataset: HuggingFace dataset ID or Dataset object
             token: Optional HuggingFace token for private datasets
 
         Returns:
@@ -187,10 +188,15 @@ class XmlParser:
         """
 
         print(f"Loading dataset {dataset}...")
-        try:
-            ds = load_dataset(dataset, split="train", token=token)
-        except Exception as e:
-            raise ValueError(f"Failed to load dataset {dataset}: {e} (did you set a token for private datasets?)")
+        if isinstance(dataset, str):
+            try:
+                ds = load_dataset(dataset, split="train", token=token)
+            except Exception as e:
+                raise ValueError(f"Failed to load dataset {dataset}: {e} (did you set a token for private datasets?)")
+        elif isinstance(dataset, datasets.Dataset):
+            ds = dataset
+        else:
+            raise ValueError("dataset must be a string (dataset ID) or a datasets.Dataset object")
 
         if not set(ds.column_names).issuperset(['image', 'xml']):
             raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
