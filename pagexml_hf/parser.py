@@ -144,6 +144,9 @@ class XmlParser:
             p.name: self._load_image(p.read_bytes()) for p in images_list
         }
         projects = self._auto_group_files(xml_files)
+        print(f"Found {len(images)} images")
+        print(f"Found {len(xml_files)} XML files")
+        print(f"Found {len(projects)} projects")
 
         for project_name, project_files in projects.items():
             print(f"Processing project: {project_name} ({len(project_files)} files)")
@@ -171,23 +174,30 @@ class XmlParser:
 
         return pages
 
-    def parse_dataset(self, dataset: str) -> List[PageData]:
+    def parse_dataset(self, dataset: str, token: Optional[str] = None) -> List[PageData]:
         """
         Parse a HuggingFace dataset containing PAGE XML files.
 
         Args:
             dataset: HuggingFace dataset ID
+            token: Optional HuggingFace token for private datasets
 
         Returns:
             List of PageData objects
         """
 
         print(f"Loading dataset {dataset}...")
-        ds = load_dataset(dataset, split="train")
+        try:
+            ds = load_dataset(dataset, split="train", token=token)
+        except Exception as e:
+            raise ValueError(f"Failed to load dataset {dataset}: {e} (did you set a token for private datasets?)")
+
+        if not set(ds.column_names).issuperset(['image', 'xml']):
+            raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
         pages = []
 
         for item in ds:
-            xml_content = item.get("xml_content")
+            xml_content = item.get("xml")
             if xml_content is None:
                 print(f"Skipping item without XML content")
                 continue

@@ -42,14 +42,12 @@ class XmlConverter:
             pages (PageData): Pages data to convert.
         """
         self.pages = pages
-        if source_type is 'huggingface':
+        if source_type == 'huggingface':
             self.source_name = source_path
         elif source_type in ['zip', 'local']:
             self.source_name = Path(source_path).name
         else:
-            raise ValueError(
-                f"Invalid source type: {source_type}. Must be 'zip', 'local', or 'huggingface'."
-            )
+            self.source_name = 'unknown_source'
 
     def convert(
             self,

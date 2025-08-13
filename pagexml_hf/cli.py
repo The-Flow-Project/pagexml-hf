@@ -12,6 +12,7 @@ from datasets.utils.logging import disable_progress_bar, enable_progress_bar
 from .converter import XmlConverter
 from .parser import XmlParser
 
+
 class SourcePathAction(argparse.Action):
     """Custom action to handle source path validation."""
     disable_progress_bar()
@@ -27,15 +28,20 @@ class SourcePathAction(argparse.Action):
             return
 
         if '/' in value and len(value.split('/')) == 2:
-            if not token:
-                parser.error('HuggingFace token is required for remote dataset input.')
             try:
-                configs = get_dataset_config_names(value)
+                configs = get_dataset_config_names(value, token=token)
                 enable_progress_bar()
                 if not configs:
                     raise ValueError()
             except Exception as e:
-                parser.error(f"Hugging Face dataset '{value}' not found or inaccessible: {e}")
+                if not token:
+                    parser.error(
+                        f"Hugging Face dataset '{value}' not found or inaccessible: {e} (did you set a token?)"
+                    )
+                else:
+                    parser.error(
+                        f"Hugging Face dataset '{value}' not found or inaccessible: {e}"
+                    )
 
             setattr(namespace, self.dest, (value, 'huggingface'))
             return
