@@ -26,8 +26,17 @@ It is a fork of the original `transkribus-hf` package by wjbmattingly (https://g
 
 ```bash
 git clone https://github.com/The-Flow-Project/pagexml-hf
-cd pagexml-hf
+cd pagexml_hf
 pip install -e .
+```
+
+or if you use `uv`:
+
+```bash
+pip install uv
+git clone https://github.com/The-Flow-Project/pagexml-hf
+cd pagexml_hf
+uv tool install -e .
 ```
 
 ## Export Modes

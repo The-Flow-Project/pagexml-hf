@@ -12,7 +12,7 @@ from .exporters import (
     WindowExporter,
 )
 
-__version__ = "0.1.0-fork"
+__version__ = "0.2.0-fork"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "l0rn0r"]
 

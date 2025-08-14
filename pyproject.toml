@@ -1,0 +1,71 @@
+[build-system]
+requires = [
+    "setuptools",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pagexml-hf"
+dynamic = ["version"]
+description = "Fork of transkribus-hf (https://github.com/wjbmattingly/transkribus-hf). Convert Transkribus ZIP files or a PageXML export folder (with images) to HuggingFace datasets"
+authors = [
+    { name = "Jonas Widmer", email = "jonas.widmer@unibe.ch" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "chardet>=4.0.0",
+    "datasets>=2.0.0",
+    "huggingface-hub>=0.15.0",
+    "lxml>=4.6.0",
+    "numpy>=1.21.0",
+    "opencv-python>=4.5.0",
+    "pillow>=9.0.0",
+    "tqdm>=4.62.0",
+]
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+keywords = [
+    "huggingface",
+    "datasets",
+    "transkribus",
+    "pagexml",
+    "ocr",
+    "htr",
+    "digital-humanities",
+    "nlp",
+    "machine-learning",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.910",
+    "ruff",
+]
+
+[project.scripts]
+pagexml-hf = "pagexml_hf.cli:main"
+
+[project.urls]
+Homepage = "https://flow-project.net"
+Repository = "https://github.com/The-Flow-Project/pagexml-hf"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.dynamic]
+version = { attr = "pagexml_hf.__version__.__version__" }

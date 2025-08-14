@@ -13,7 +13,7 @@ from datasets import load_dataset
 from dataclasses import dataclass
 from PIL import Image
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Dict, List, Optional, Tuple, Callable, Union
 
 import chardet
 
@@ -205,7 +205,7 @@ class XmlParser:
         for item in ds:
             xml_content = item.get("xml")
             if xml_content is None:
-                print(f"Skipping item without XML content")
+                print("Skipping item without XML content")
                 continue
 
             project_name = item.get("project", "unknown_project")

@@ -206,7 +206,7 @@ def main():
     elif source_type == 'huggingface':
         pages = parser.parse_dataset(source_path)
     else:
-        print(f"Error: Unsupported source")
+        print("Error: Unsupported source")
         sys.exit(1)
 
     # Initialize converter
