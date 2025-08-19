@@ -153,7 +153,7 @@ class RawXMLExporter(BaseExporter):
                     }
                 else:
                     self.skipped_count += 1
-                    self.failed_images.append(page.image_filename)
+                    self.failed_images.append([page.image_filename, "No image found"])
 
         features = Features(
             {
@@ -206,7 +206,7 @@ class TextExporter(BaseExporter):
                     }
                 else:
                     self.skipped_count += 1
-                    self.failed_images.append(page.image_filename)
+                    self.failed_images.append([page.image_filename, "No image found"])
 
         features = Features(
             {
@@ -271,7 +271,7 @@ class RegionExporter(BaseExporter):
                                 }
                 else:
                     self.skipped_count += 1
-                    self.failed_images.append(page.image_filename)
+                    self.failed_images.append([page.image_filename, "No image found"])
 
         features = Features(
             {
@@ -342,7 +342,7 @@ class LineExporter(BaseExporter):
                                     }
                 else:
                     self.skipped_count += 1
-                    self.failed_images.append(page.image_filename)
+                    self.failed_images.append([page.image_filename, "No image found"])
 
         features = Features(
             {
@@ -451,7 +451,7 @@ class WindowExporter(BaseExporter):
                                     }
                 else:
                     self.skipped_count += 1
-                    self.failed_images.append(page.image_filename)
+                    self.failed_images.append([page.image_filename, "No image found"])
 
         # Create dataset using generator to avoid memory issues
         features = Features(

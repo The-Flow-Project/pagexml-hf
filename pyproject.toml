@@ -8,7 +8,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pagexml-hf"
 dynamic = ["version"]
-description = "Fork of transkribus-hf (https://github.com/wjbmattingly/transkribus-hf). Convert Transkribus ZIP files or a PageXML export folder (with images) to HuggingFace datasets"
+description = """
+    Fork of transkribus-hf (https://github.com/wjbmattingly/transkribus-hf).
+    Convert Transkribus ZIP files or a PageXML export folder (with images) to HuggingFace datasets
+ """
 authors = [
     { name = "Jonas Widmer", email = "jonas.widmer@unibe.ch" }
 ]

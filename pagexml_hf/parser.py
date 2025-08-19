@@ -92,7 +92,7 @@ class XmlParser:
             file_list = zip_file.namelist()
             image_files = [
                 f for f in file_list
-                if f.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff"))
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff"))
                    and not self._is_macos_metadata_file(f)
             ]
             images = {
