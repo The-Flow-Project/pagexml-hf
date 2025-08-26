@@ -42,7 +42,7 @@ class XmlConverter:
             pages (PageData): Pages data to convert.
         """
         self.pages = pages
-        if source_type == 'huggingface':
+        if source_type in ['huggingface', 'zip_url']:
             self.source_name = source_path
         elif source_type in ['zip', 'local']:
             self.source_name = Path(source_path).name

@@ -559,7 +559,6 @@ class XmlParser:
         if text_equiv is not None and text_equiv.text:
             return text_equiv.text
         return None
-
     @staticmethod
     def _extract_reading_order_from_custom(element: ET.Element) -> int:
         """Extract reading order from custom attribute."""

@@ -19,6 +19,8 @@ class SourcePathAction(argparse.Action):
 
     def __call__(self, parser, namespace, value, option_string=None):
         token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
+        if value.beginswith('http://') or value.startswith('https://'):
+            setattr(namespace, self.dest, (value, 'zip_url'))
         path = Path(value)
         if path.exists():
             if path.is_dir():
@@ -196,15 +198,15 @@ def main():
             sys.exit(1)
 
     # Initialize parser
-    parser = XmlParser(namespace=args.namespace)
+    xmlparser = XmlParser(namespace=args.namespace)
     pages = None
 
     if source_type == 'local':
-        pages = parser.parse_folder(source_path)
-    elif source_type == 'zip':
-        pages = parser.parse_zip(source_path)
+        pages = xmlparser.parse_folder(source_path)
+    elif source_type in ['zip', 'zip_url']:
+        pages = xmlparser.parse_zip(source_path)
     elif source_type == 'huggingface':
-        pages = parser.parse_dataset(source_path)
+        pages = xmlparser.parse_dataset(source_path)
     else:
         print("Error: Unsupported source")
         sys.exit(1)
