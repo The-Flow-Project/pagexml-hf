@@ -78,11 +78,21 @@ class XmlParser:
         Parse a Transkribus ZIP file and extract all page data.
 
         Args:
-            zip_path: Path to the ZIP file
+            zip_path: Path or URL to the ZIP file
 
         Returns:
             List of PageData objects
         """
+        if zip_path.startswith("http://") or zip_path.startswith("https://"):
+            try:
+                response = requests.get(zip_path, timeout=20)
+                response.raise_for_status()
+                zip_data = io.BytesIO(response.content)
+                zip_path = zip_data
+            except requests.exceptions.Timeout:
+                raise ValueError(f"Image download from {zip_path} timed out")
+            except requests.exceptions.RequestException as e:
+                raise ValueError(f"Image download from {zip_path} failed: {e}")
         if not zipfile.is_zipfile(zip_path):
             raise ValueError(f"{zip_path} is not a valid ZIP file")
         pages = []
