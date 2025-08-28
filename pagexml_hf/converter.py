@@ -116,7 +116,8 @@ class XmlConverter:
             dataset = exporter.export(self.pages)
 
         if split_train is not None:
-            if not (0 < split_train < 1):
+            print(f"Splitting dataset into train and test sets (train size={split_train})...")
+            if not (0.0 < split_train < 1.0):
                 raise ValueError("split_train must be between 0 and 1")
             dataset = dataset.train_test_split(
                 train_size=split_train, shuffle=split_shuffle, seed=split_seed

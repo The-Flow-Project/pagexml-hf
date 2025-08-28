@@ -6,7 +6,7 @@ import os
 import re
 import io
 import requests
-import xml.etree.ElementTree as ET
+import lxml.etree as ET
 import zipfile
 import datasets
 from datasets import load_dataset
@@ -205,8 +205,6 @@ class XmlParser:
                 raise ValueError(f"Failed to load dataset {dataset}: {e} (did you set a token for private datasets?)")
         elif isinstance(dataset, datasets.Dataset):
             ds = dataset
-        else:
-            raise ValueError("dataset must be a string (dataset ID) or a datasets.Dataset object")
 
         if not set(ds.column_names).issuperset(['image', 'xml']):
             raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
@@ -220,11 +218,13 @@ class XmlParser:
 
             project_name = item.get("project", "unknown_project")
             page_data = self._parse_page_xml(xml_content, project_name)
-            image = item.get("image")
-            if image is not None and isinstance(image, Image.Image):
-                page_data.image = image
             if page_data:
+                image = item.get("image")
+                if image is not None:
+                    page_data.image = image
                 pages.append(page_data)
+            else:
+                print("Skipping item with invalid XML content")
 
         return pages
 
@@ -252,6 +252,7 @@ class XmlParser:
                     pages.append(page_data)
             except Exception as e:
                 print(f"Error parsing {file_path}: {e}")
+        check_empty_lines = any([])
         return pages
 
     def _read_xml_with_encoding(
@@ -309,15 +310,22 @@ class XmlParser:
         return base.lower() in ['mets.xml', 'metadata.xml']
 
     def _parse_page_xml(
-            self, xml_content: str, project_name: str
+            self, xml_content: str, project_name: str, image_raw: Optional[Image] = None,
     ) -> Optional[PageData]:
         """Parse a single PAGE XML file."""
         try:
-            root = ET.fromstring(xml_content)
-
+            root = ET.fromstring(
+                xml_content.encode(),
+                parser=ET.XMLParser(
+                    encoding='utf-8',
+                    ns_clean=True,
+                    compact=False,
+                )
+            )
             # Get page element
             page_elem = root.find("pc:Page", self.namespace)
             if page_elem is None:
+                print("No Page element found in XML")
                 return None
 
             # Extract page metadata
@@ -326,11 +334,14 @@ class XmlParser:
             image_height = int(page_elem.get("imageHeight", 0))
 
             # if available, extract image URL
-            image_data = self._parse_imgurl(root)
-            if image_data:
-                image = self._load_image(image_data)
+            if image_raw:
+                image = image_raw
             else:
-                image = None
+                image_data = self._parse_imgurl(root)
+                if image_data:
+                    image = self._load_image(image_data)
+                else:
+                    image = None
 
             # Parse reading order
             reading_order = self._parse_reading_order(root)
@@ -559,6 +570,7 @@ class XmlParser:
         if text_equiv is not None and text_equiv.text:
             return text_equiv.text
         return None
+
     @staticmethod
     def _extract_reading_order_from_custom(element: ET.Element) -> int:
         """Extract reading order from custom attribute."""

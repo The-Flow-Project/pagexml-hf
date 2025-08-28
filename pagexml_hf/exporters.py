@@ -75,7 +75,7 @@ class BaseExporter(ABC):
             if mask:
                 mask_img = np.zeros(img_array.shape[:2], dtype=np.uint8)
                 pts = np.array([shifted_coords], dtype=np.int32)
-                cv2.fillPoly(mask_img, pts, 255)
+                cv2.fillPoly(mask_img, pts, color=(255, 0, 0))
                 white_bg = np.ones_like(img_array, dtype=np.uint8) * 255
                 result = np.where(mask_img[:, :, None] == 255, img_array, white_bg)
             else:
@@ -164,13 +164,13 @@ class RawXMLExporter(BaseExporter):
             }
         )
 
-        try:
-            dataset = Dataset.from_generator(
-                generate_examples, features=features  # default: cache_dir=None
-            )
-        except Exception as e:
-            print(f"Error creating dataset: {e}")
-            dataset = None
+        #try:
+        dataset = Dataset.from_generator(
+            generate_examples, features=features  # default: cache_dir=None
+        )
+        #except Exception as e:
+        #    print(f"Error creating dataset: {e}")
+        #    dataset = None
 
         self._print_summary(dataset)
         return dataset
@@ -188,7 +188,7 @@ class TextExporter(BaseExporter):
             """
             for page in pages:
                 image = page.image
-                if image:
+                if image is not None:
                     # Concatenate all text from regions in reading order
                     full_text = "\n".join(
                         [
@@ -246,9 +246,12 @@ class RegionExporter(BaseExporter):
             """
             Generator for dataset creation.
             """
+            check_region_text = any([region.full_text for page in pages for region in page.regions])
+            if not check_region_text and not allow_empty:
+                raise ValueError("No region contains text. Use allow_empty=True to export empty regions.")
             for page in pages:
                 full_image = page.image
-                if full_image:
+                if full_image is not None:
                     for region in page.regions:
                         if region.full_text or allow_empty:
                             region_image = self._crop_region(
@@ -258,7 +261,7 @@ class RegionExporter(BaseExporter):
                                 min_width=min_width,
                                 min_height=min_height,
                             )
-                            if region_image:
+                            if region_image is not None:
                                 self.processed_count += 1
                                 yield {
                                     "image": region_image,
@@ -289,6 +292,9 @@ class RegionExporter(BaseExporter):
             dataset = Dataset.from_generator(
                 generate_examples, features=features  # default: cache_dir=None
             )
+        except ValueError as e:
+            print(f"ValueError creating dataset: {e}")
+            dataset = None
         except Exception as e:
             print(f"Error creating dataset: {e}")
             dataset = None
@@ -314,9 +320,12 @@ class LineExporter(BaseExporter):
             """
             Generator for dataset creation.
             """
+            check_region_text = any([region.full_text for page in pages for region in page.regions])
+            if not check_region_text and not allow_empty:
+                raise ValueError("No region contains text. Use allow_empty=True to export empty regions.")
             for page in pages:
                 full_image = page.image
-                if full_image:
+                if full_image is not None:
                     for region in page.regions:
                         for line in region.text_lines:
                             if line.text or allow_empty:
@@ -327,7 +336,7 @@ class LineExporter(BaseExporter):
                                     min_width=min_width,
                                     min_height=min_height,
                                 )
-                                if line_image:
+                                if line_image is not None:
                                     self.processed_count += 1
                                     yield {
                                         "image": line_image,
@@ -340,7 +349,9 @@ class LineExporter(BaseExporter):
                                         "filename": page.image_filename,
                                         "project": page.project_name,
                                     }
+
                 else:
+                    print(f"Warning: No image found for page {page.image_filename}")
                     self.skipped_count += 1
                     self.failed_images.append([page.image_filename, "No image found"])
 
@@ -362,6 +373,9 @@ class LineExporter(BaseExporter):
             dataset = Dataset.from_generator(
                 generate_examples, features=features  # default: cache_dir=None
             )
+        except ValueError as e:
+            print(f"ValueError creating dataset: {e}")
+            dataset = None
         except Exception as e:
             print(f"Error creating dataset: {e}")
             dataset = None
@@ -403,7 +417,7 @@ class WindowExporter(BaseExporter):
             """
             for page in pages:
                 full_image = page.image
-                if full_image:
+                if full_image is not None:
                     for region in page.regions:
                         # Generate sliding windows for this region
                         windows = self._create_windows(region.text_lines)
@@ -412,14 +426,14 @@ class WindowExporter(BaseExporter):
                             line_coords = [
                                 line.coords for line in window_lines if line.coords
                             ]
-                            if line_coords:
+                            if line_coords is not None:
                                 window_coords = self._calculate_bounding_box(
                                     line_coords
                                 )
                                 window_image = self._crop_region(
                                     full_image, window_coords, mask
                                 )
-                                if window_image:
+                                if window_image is not None:
                                     # Combine text from all lines in window
                                     window_text = "\n".join(
                                         [
