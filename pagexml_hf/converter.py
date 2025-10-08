@@ -4,9 +4,10 @@ Main converter class for Transkribus to HuggingFace datasets.
 
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+import os
+
 from datasets import Dataset, disable_caching
 from huggingface_hub import create_repo, get_token
-import os
 
 from .parser import PageData
 from .exporters import (
@@ -21,7 +22,8 @@ disable_caching()  # Disable caching to save disk space
 
 
 class XmlConverter:
-    """Main converter class for converting Transkribus ZIP/XML-folder files to HuggingFace datasets."""
+    """Main converter class for converting Transkribus \
+        ZIP/XML-folder files to HuggingFace datasets."""
 
     EXPORT_MODES = {
         "raw_xml": RawXMLExporter,
@@ -44,9 +46,9 @@ class XmlConverter:
             pages (PageData): Pages data to convert.
         """
         self.pages = pages
-        if source_type in ['huggingface', 'zip_url']:
+        if source_type in ['huggingface', 'zip_url'] and source_path is not None:
             self.source_name = source_path
-        elif source_type in ['zip', 'local']:
+        elif source_type in ['zip', 'local'] and source_path is not None:
             self.source_name = Path(source_path).name
         else:
             self.source_name = 'unknown_source'
@@ -75,15 +77,18 @@ class XmlConverter:
             split_seed: Random seed for train/test split
             split_shuffle: Whether to shuffle the dataset before splitting
             mask_crop: Whether to crop the mask to polygon (only for region and line mode)
-            min_width: Minimum width of the regions/lines to be processed (only for region and line mode)
-            min_height: Minimum height of the regions/lines to be processed (only for region and line mode)
+            min_width: Minimum width of the regions/lines to be processed \
+                (only for region and line mode)
+            min_height: Minimum height of the regions/lines to be processed \
+                (only for region and line mode)
             allow_empty: Whether to allow empty elements in the output (default: False)
         Returns:
             HuggingFace Dataset
         """
         if export_mode not in self.EXPORT_MODES:
             raise ValueError(
-                f"Invalid export mode: {export_mode}. Available modes: {list(self.EXPORT_MODES.keys())}"
+                f"Invalid export mode: {export_mode}. \
+                    Available modes: {list(self.EXPORT_MODES.keys())}"
             )
 
         exporter_class = self.EXPORT_MODES[export_mode]
@@ -96,7 +101,8 @@ class XmlConverter:
                 overlap=overlap,
             )
             print(
-                f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})..."
+                f"Converting to {export_mode} format \
+                    (window_size={window_size}, overlap={overlap})..."
             )
         else:
             exporter = exporter_class(
@@ -105,7 +111,7 @@ class XmlConverter:
             print(f"Converting to {export_mode} format...")
 
         # Export dataset
-        if export_mode == "line" or export_mode == "region":
+        if export_mode in ("line", "region"):
             # For line and region modes, we can apply mask cropping
             dataset = exporter.export(
                 self.pages,
@@ -119,7 +125,7 @@ class XmlConverter:
 
         if split_train is not None:
             print(f"Splitting dataset into train and test sets (train size={split_train})...")
-            if not (0.0 < split_train < 1.0):
+            if not 0.0 < split_train < 1.0:
                 raise ValueError("split_train must be between 0 and 1")
             dataset = dataset.train_test_split(
                 train_size=split_train, shuffle=split_shuffle, seed=split_seed
@@ -162,7 +168,6 @@ class XmlConverter:
                     token = get_token()
                 except Exception as e:
                     print(f"Error getting token: {e}")
-                    pass
 
         # If still no token, provide helpful error message
         if token is None:

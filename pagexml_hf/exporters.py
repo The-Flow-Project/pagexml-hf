@@ -8,7 +8,15 @@ from typing import List, Optional, Tuple, Union
 from PIL import Image, ImageFile
 import numpy as np
 import cv2
-from datasets import Dataset, Features, Value, Image as DatasetImage, disable_caching
+from datasets import (
+  Dataset,
+  DatasetDict,
+  IterableDataset,
+  Features,
+  Value,
+  Image as DatasetImage,
+  disable_caching
+)
 
 from .parser import PageData, TextLine
 
@@ -30,9 +38,14 @@ class BaseExporter(ABC):
         self.skipped_count = 0
 
     @abstractmethod
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData]) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export pages to a HuggingFace dataset."""
-        pass
 
     def _crop_region(
             self,
@@ -42,7 +55,8 @@ class BaseExporter(ABC):
             min_width: Optional[int] = None,
             min_height: Optional[int] = None,
     ) -> Optional[Image.Image]:
-        """Crop a region from an image based on coordinates, optimized by pre-cropping to bounding box."""
+        """Crop a region from an image based on coordinates, \
+            optimized by pre-cropping to bounding box."""
         if not coords:
             print("Warning: No coordinates provided for cropping.")
             self.skipped_count += 1
@@ -113,13 +127,24 @@ class BaseExporter(ABC):
         # Return as rectangle coordinates
         return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
 
-    def _print_summary(self, dataset: Optional[Dataset] = None) -> None:
+
+    def _print_summary(
+            self,
+            dataset: Optional[
+                Union[
+                    Dataset,
+                    DatasetDict,
+                    IterableDataset,
+                    dict[str, IterableDataset]
+                ]
+            ] = None
+        ) -> None:
         """Print processing summary."""
         print("#" * 60)
         if not dataset:
             print("No dataset created.")
             return
-        elif self.processed_count == 0 and self.skipped_count == 0:
+        if self.processed_count == 0 and self.skipped_count == 0:
             print("⚠️ No new items processed — dataset likely loaded from cache.")
         else:
             print("\nProcessing Summary:")
@@ -136,7 +161,13 @@ class BaseExporter(ABC):
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
 
-    def export(self, pages: List[PageData]) -> Union[Dataset, None]:
+    def export(self, pages: List[PageData]) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export pages as image + raw XML pairs."""
         print(f"Exporting raw XML content with images... (Processed: {len(pages)})")
 
@@ -180,7 +211,13 @@ class RawXMLExporter(BaseExporter):
 class TextExporter(BaseExporter):
     """Export images with concatenated text content."""
 
-    def export(self, pages: List[PageData]) -> Dataset:
+    def export(self, pages: List[PageData]) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export pages as image + full text pairs."""
 
         def generate_examples():
@@ -240,7 +277,13 @@ class RegionExporter(BaseExporter):
             min_width: Optional[int] = None,
             min_height: Optional[int] = None,
             allow_empty: bool = False,
-    ) -> Dataset:
+    ) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export each region as a separate dataset entry."""
 
         def generate_examples():
@@ -249,7 +292,8 @@ class RegionExporter(BaseExporter):
             """
             check_region_text = any([region.full_text for page in pages for region in page.regions])
             if not check_region_text and not allow_empty:
-                raise ValueError("No region contains text. Use allow_empty=True to export empty regions.")
+                raise ValueError("No region contains text. \
+                                 Use allow_empty=True to export empty regions.")
             for page in pages:
                 full_image = page.image
                 if full_image is not None:
@@ -314,47 +358,54 @@ class LineExporter(BaseExporter):
             min_width: Optional[int] = None,
             min_height: Optional[int] = None,
             allow_empty: bool = False,
-    ) -> Dataset:
+    ) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export each text line as a separate dataset entry."""
 
         def generate_examples():
             """
             Generator for dataset creation.
             """
-            check_region_text = any([region.full_text for page in pages for region in page.regions])
+            check_region_text = any(region.full_text for page in pages for region in page.regions)
             if not check_region_text and not allow_empty:
-                raise ValueError("No region contains text. Use allow_empty=True to export empty regions.")
+                raise ValueError("No region contains text. \
+                                 Use allow_empty=True to export empty regions.")
             for page in pages:
                 full_image = page.image
-                if full_image is not None:
-                    for region in page.regions:
-                        for line in region.text_lines:
-                            if line.text or allow_empty:
-                                line_image = self._crop_region(
-                                    full_image,
-                                    line.coords,
-                                    mask=mask,
-                                    min_width=min_width,
-                                    min_height=min_height,
-                                )
-                                if line_image is not None:
-                                    self.processed_count += 1
-                                    yield {
-                                        "image": line_image,
-                                        "text": line.text if line.text else "",
-                                        "line_id": line.id,
-                                        "line_reading_order": line.reading_order,
-                                        "region_id": line.region_id,
-                                        "region_reading_order": region.reading_order,
-                                        "region_type": region.type,
-                                        "filename": page.image_filename,
-                                        "project": page.project_name,
-                                    }
-
-                else:
+                if full_image is None:
                     print(f"Warning: No image found for page {page.image_filename}")
                     self.skipped_count += 1
                     self.failed_images.append([page.image_filename, "No image found"])
+                    continue
+                for region in page.regions:
+                    for line in region.text_lines:
+                        if line.text or allow_empty:
+                            line_image = self._crop_region(
+                                full_image,
+                                line.coords,
+                                mask=mask,
+                                min_width=min_width,
+                                min_height=min_height,
+                            )
+                            if line_image is not None:
+                                self.processed_count += 1
+                                yield {
+                                    "image": line_image,
+                                    "text": line.text if line.text else "",
+                                    "line_id": line.id,
+                                    "line_reading_order": line.reading_order,
+                                    "region_id": line.region_id,
+                                    "region_reading_order": region.reading_order,
+                                    "region_type": region.type,
+                                    "filename": page.image_filename,
+                                    "project": page.project_name,
+                                }
+
 
         features = Features(
             {
@@ -409,7 +460,13 @@ class WindowExporter(BaseExporter):
         if overlap >= window_size:
             raise ValueError("Overlap must be less than window size")
 
-    def export(self, pages: List[PageData], mask: bool = False) -> Dataset:
+    def export(self, pages: List[PageData], mask: bool = False) -> Union[
+        Dataset,
+        DatasetDict,
+        IterableDataset,
+        dict[str, IterableDataset],
+        None
+    ]:
         """Export sliding windows of lines as separate dataset entries."""
 
         def generate_examples():
@@ -418,55 +475,56 @@ class WindowExporter(BaseExporter):
             """
             for page in pages:
                 full_image = page.image
-                if full_image is not None:
-                    for region in page.regions:
-                        # Generate sliding windows for this region
-                        windows = self._create_windows(region.text_lines)
-                        for window_idx, window_lines in enumerate(windows):
-                            # Calculate bounding box for all lines in this window
-                            line_coords = [
-                                line.coords for line in window_lines if line.coords
-                            ]
-                            if line_coords is not None:
-                                window_coords = self._calculate_bounding_box(
-                                    line_coords
-                                )
-                                window_image = self._crop_region(
-                                    full_image, window_coords, mask
-                                )
-                                if window_image is not None:
-                                    # Combine text from all lines in window
-                                    window_text = "\n".join(
-                                        [
-                                            line.text
-                                            for line in window_lines
-                                            if line.text
-                                        ]
-                                    )
-                                    # Create line info for metadata
-                                    line_ids = [line.id for line in window_lines]
-                                    line_orders = [
-                                        line.reading_order for line in window_lines
-                                    ]
-                                    self.processed_count += 1
-                                    yield {
-                                        "image": window_image,
-                                        "text": window_text,
-                                        "window_size": len(window_lines),
-                                        "window_index": window_idx,
-                                        "line_ids": ", ".join(line_ids),
-                                        "line_reading_orders": ", ".join(
-                                            map(str, line_orders)
-                                        ),
-                                        "region_id": region.id,
-                                        "region_reading_order": region.reading_order,
-                                        "region_type": region.type,
-                                        "filename": page.image_filename,
-                                        "project": page.project_name,
-                                    }
-                else:
+                if full_image is None:
                     self.skipped_count += 1
                     self.failed_images.append([page.image_filename, "No image found"])
+                    continue
+
+                for region in page.regions:
+                    # Generate sliding windows for this region
+                    windows = self._create_windows(region.text_lines)
+                    for window_idx, window_lines in enumerate(windows):
+                        # Calculate bounding box for all lines in this window
+                        line_coords = [
+                            line.coords for line in window_lines if line.coords
+                        ]
+                        if line_coords is not None:
+                            window_coords = self._calculate_bounding_box(
+                                line_coords
+                            )
+                            window_image = self._crop_region(
+                                full_image, window_coords, mask
+                            )
+                            if window_image is not None:
+                                # Combine text from all lines in window
+                                window_text = "\n".join(
+                                    [
+                                        line.text
+                                        for line in window_lines
+                                        if line.text
+                                    ]
+                                )
+                                # Create line info for metadata
+                                line_ids = [line.id for line in window_lines]
+                                line_orders = [
+                                    line.reading_order for line in window_lines
+                                ]
+                                self.processed_count += 1
+                                yield {
+                                    "image": window_image,
+                                    "text": window_text,
+                                    "window_size": len(window_lines),
+                                    "window_index": window_idx,
+                                    "line_ids": ", ".join(line_ids),
+                                    "line_reading_orders": ", ".join(
+                                        map(str, line_orders)
+                                    ),
+                                    "region_id": region.id,
+                                    "region_reading_order": region.reading_order,
+                                    "region_type": region.type,
+                                    "filename": page.image_filename,
+                                    "project": page.project_name,
+                                }
 
         # Create dataset using generator to avoid memory issues
         features = Features(

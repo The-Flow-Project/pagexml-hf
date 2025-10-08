@@ -5,15 +5,16 @@ Parser for Transkribus ZIP files and PAGE XML format.
 import os
 import re
 import io
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Dict, List, Optional, Tuple, Callable, Union, Mapping
+
 import requests
 import lxml.etree as ET
-import zipfile
 import datasets
 from datasets import load_dataset, disable_caching
-from dataclasses import dataclass
 from PIL import Image
-from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Tuple, Callable, Union
 
 import chardet
 
@@ -91,10 +92,10 @@ class XmlParser:
                 response.raise_for_status()
                 zip_data = io.BytesIO(response.content)
                 zip_path = zip_data
-            except requests.exceptions.Timeout:
-                raise ValueError(f"Image download from {zip_path} timed out")
+            except requests.exceptions.Timeout as e:
+                raise ValueError(f"Image download from {zip_path} timed out: {e}") from e
             except requests.exceptions.RequestException as e:
-                raise ValueError(f"Image download from {zip_path} failed: {e}")
+                raise ValueError(f"Image download from {zip_path} failed: {e}") from e
         if not zipfile.is_zipfile(zip_path):
             raise ValueError(f"{zip_path} is not a valid ZIP file")
         pages = []
@@ -179,7 +180,7 @@ class XmlParser:
                     with open(file_path, "rb") as f:
                         raw_content = f.read()
                     return self._decode_bytes(raw_content, file_path)
-                except Exception as e:
+                except (OSError, IOError, UnicodeDecodeError) as e:
                     print(f"Error reading {file_path}: {e}")
                     return None
 
@@ -187,7 +188,11 @@ class XmlParser:
 
         return pages
 
-    def parse_dataset(self, dataset: Union[str, datasets.Dataset], token: Optional[str] = None) -> List[PageData]:
+    def parse_dataset(
+            self,
+            dataset: Union[str, datasets.Dataset],
+            token: Optional[str] = None
+        ) -> List[PageData]:
         """
         Parse a HuggingFace dataset containing PAGE XML files.
 
@@ -200,15 +205,22 @@ class XmlParser:
         """
 
         print(f"Loading dataset {dataset}...")
+        ds = None
         if isinstance(dataset, str):
             try:
                 ds = load_dataset(dataset, split="train", token=token)
             except Exception as e:
-                raise ValueError(f"Failed to load dataset {dataset}: {e} (did you set a token for private datasets?)")
+                raise ValueError(
+                    f"Failed to load dataset {dataset}: {e} \
+                        (did you set a token for private datasets?)"
+                ) from e
         elif isinstance(dataset, datasets.Dataset):
             ds = dataset
+        else:
+            raise ValueError("dataset must be a string or a datasets.Dataset object")
 
-        if not set(ds.column_names).issuperset(['image', 'xml']):
+        column_names = ds.column_names if isinstance(ds.column_names, list) else []
+        if not set(column_names).issuperset(['image', 'xml']):
             raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
         pages = []
 
@@ -230,11 +242,12 @@ class XmlParser:
 
         return pages
 
+
     def _parse_files(
             self,
             file_paths: List[str],
             file_loader: Callable[[str], Optional[str]],
-            images: Dict[str, Image],
+            images: Mapping[str, Optional[Image.Image]],
             project_name: str,
     ) -> List[PageData]:
         pages = []
@@ -252,7 +265,7 @@ class XmlParser:
                         page_data.image = images[page_data.image_filename]
 
                     pages.append(page_data)
-            except Exception as e:
+            except (ET.ParseError, ValueError, TypeError) as e:
                 print(f"Error parsing {file_path}: {e}")
         return pages
 
@@ -263,7 +276,7 @@ class XmlParser:
         try:
             raw_content = zip_file.read(xml_filename)
             return self._decode_bytes(raw_content, xml_filename)
-        except Exception as e:
+        except (KeyError, OSError, IOError, zipfile.BadZipFile, zipfile.LargeZipFile) as e:
             print(f"Error reading {xml_filename}: {e}")
             return None
 
@@ -277,10 +290,11 @@ class XmlParser:
         detected = chardet.detect(raw_content)
         if detected and detected["confidence"] > 0.7:
             encoding = detected["encoding"]
-            try:
-                return raw_content.decode(encoding)
-            except (UnicodeDecodeError, LookupError):
-                pass
+            if encoding is not None:
+                try:
+                    return raw_content.decode(encoding)
+                except (UnicodeDecodeError, LookupError):
+                    pass
 
         for enc in ["latin-1", "cp1252", "iso-8859-1"]:
             try:
@@ -311,7 +325,7 @@ class XmlParser:
         return base.lower() in ['mets.xml', 'metadata.xml']
 
     def _parse_page_xml(
-            self, xml_content: str, project_name: str, image_raw: Optional[Image] = None,
+            self, xml_content: str, project_name: str, image_raw: Optional[Image.Image] = None,
     ) -> Optional[PageData]:
         """Parse a single PAGE XML file."""
         try:
@@ -510,7 +524,7 @@ class XmlParser:
 
             return self._correct_orientation(image)
 
-        except Exception as e:
+        except (IOError, OSError, ValueError) as e:
             error_msg = f"Error loading image: {e}"
             print(f"Warning: {error_msg}")
             return None
@@ -543,9 +557,11 @@ class XmlParser:
             idx = parts.index("page")
             if idx > 0:
                 return parts[idx - 1]
+            elif idx == 0 and len(parts) > 1:
+                return parts[0]
         if len(parts) >= 2:
             return parts[-2]
-        return parts[0]
+        return "unknown_project"
 
     @staticmethod
     def _parse_coords(coords_elem: Optional[ET.Element]) -> List[Tuple[int, int]]:
