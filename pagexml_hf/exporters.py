@@ -8,12 +8,13 @@ from typing import List, Optional, Tuple, Union
 from PIL import Image, ImageFile
 import numpy as np
 import cv2
-from datasets import Dataset, Features, Value, Image as DatasetImage
+from datasets import Dataset, Features, Value, Image as DatasetImage, disable_caching
 
 from .parser import PageData, TextLine
 
 # Allow loading of truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+disable_caching()
 
 
 class BaseExporter(ABC):

@@ -9,13 +9,15 @@ import requests
 import lxml.etree as ET
 import zipfile
 import datasets
-from datasets import load_dataset
+from datasets import load_dataset, disable_caching
 from dataclasses import dataclass
 from PIL import Image
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple, Callable, Union
 
 import chardet
+
+disable_caching()  # Disable caching to save disk space
 
 
 @dataclass
@@ -252,7 +254,6 @@ class XmlParser:
                     pages.append(page_data)
             except Exception as e:
                 print(f"Error parsing {file_path}: {e}")
-        check_empty_lines = any([])
         return pages
 
     def _read_xml_with_encoding(

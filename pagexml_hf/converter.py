@@ -4,7 +4,7 @@ Main converter class for Transkribus to HuggingFace datasets.
 
 from typing import Optional, Dict, Any, List
 from pathlib import Path
-from datasets import Dataset
+from datasets import Dataset, disable_caching
 from huggingface_hub import create_repo, get_token
 import os
 
@@ -16,6 +16,8 @@ from .exporters import (
     LineExporter,
     WindowExporter,
 )
+
+disable_caching()  # Disable caching to save disk space
 
 
 class XmlConverter:
