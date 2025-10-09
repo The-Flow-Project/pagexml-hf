@@ -86,21 +86,26 @@ class XmlParser:
         Returns:
             List of PageData objects
         """
+        zip_file = None
+
         if zip_path.startswith("http://") or zip_path.startswith("https://"):
             try:
-                response = requests.get(zip_path, timeout=20)
+                response = requests.get(zip_path, timeout=30)
                 response.raise_for_status()
-                zip_data = io.BytesIO(response.content)
-                zip_path = zip_data
+                zip_data_io = io.BytesIO(response.content)
+                zip_file = zipfile.ZipFile(zip_data_io)
             except requests.exceptions.Timeout as e:
-                raise ValueError(f"Image download from {zip_path} timed out: {e}") from e
+                raise ValueError(f"Download from {zip_path} timed out: {e}") from e
             except requests.exceptions.RequestException as e:
-                raise ValueError(f"Image download from {zip_path} failed: {e}") from e
-        if not zipfile.is_zipfile(zip_path):
-            raise ValueError(f"{zip_path} is not a valid ZIP file")
+                raise ValueError(f"Download from {zip_path} failed: {e}") from e
+        else:
+            if not zipfile.is_zipfile(zip_path):
+                raise ValueError(f"{zip_path} is not a valid ZIP file")
+            zip_file = zipfile.ZipFile(zip_path)
+
         pages = []
 
-        with zipfile.ZipFile(zip_path) as zip_file:
+        with zip_file:
             # Get all files in the ZIP
             file_list = zip_file.namelist()
             image_files = [
@@ -192,7 +197,7 @@ class XmlParser:
             self,
             dataset: Union[str, datasets.Dataset],
             token: Optional[str] = None
-        ) -> List[PageData]:
+    ) -> List[PageData]:
         """
         Parse a HuggingFace dataset containing PAGE XML files.
 
@@ -205,7 +210,6 @@ class XmlParser:
         """
 
         print(f"Loading dataset {dataset}...")
-        ds = None
         if isinstance(dataset, str):
             try:
                 ds = load_dataset(dataset, split="train", token=token)
@@ -241,7 +245,6 @@ class XmlParser:
                 print("Skipping item with invalid XML content")
 
         return pages
-
 
     def _parse_files(
             self,
