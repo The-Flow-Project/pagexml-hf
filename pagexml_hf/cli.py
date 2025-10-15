@@ -19,7 +19,7 @@ class SourcePathAction(argparse.Action):
 
     def __call__(self, parser, namespace, value, option_string=None):
         token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
-        if value.beginswith('http://') or value.startswith('https://'):
+        if value.startswith('http://') or value.startswith('https://'):
             setattr(namespace, self.dest, (value, 'zip_url'))
         path = Path(value)
         if path.exists():
