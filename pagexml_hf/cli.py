@@ -193,7 +193,7 @@ def main():
         logger = init_info_logger()
         # set_verbosity_info()
 
-    logger.info("Process started over CLI")
+    logger.info("Process started via CLI")
     logger.info("Source path: {}".format(source_path))
     logger.info("Source type: {}".format(source_type))
 

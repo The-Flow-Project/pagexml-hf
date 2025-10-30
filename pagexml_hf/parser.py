@@ -250,7 +250,7 @@ class XmlParser:
         pages = []
         for file_path in file_paths:
             try:
-                logger.info(f"Parsing XML {file_path}")
+                logger.debug(f"Parsing XML {file_path}")
                 xml_content = file_loader(file_path)
                 if xml_content is None:
                     logger.warning(f"Skipping {file_path} due to read error")
