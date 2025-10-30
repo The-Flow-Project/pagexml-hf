@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from datasets import get_dataset_config_names
 from datasets.utils.logging import disable_progress_bar, enable_progress_bar
+from datasets.utils.logging import set_verbosity_info, set_verbosity_debug
 
 from .converter import XmlConverter
 from .parser import XmlParser
@@ -16,7 +17,8 @@ from .logger import init_debug_logger, init_info_logger
 
 class SourcePathAction(argparse.Action):
     """Custom action to handle source path validation."""
-    disable_progress_bar()
+
+    # disable_progress_bar()
 
     def __call__(self, parser, namespace, value, option_string=None):
         token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
@@ -33,7 +35,7 @@ class SourcePathAction(argparse.Action):
         if '/' in value and len(value.split('/')) == 2:
             try:
                 configs = get_dataset_config_names(value, token=token)
-                enable_progress_bar()
+                # enable_progress_bar()
                 if not configs:
                     raise ValueError()
             except Exception as e:
@@ -186,8 +188,10 @@ def main():
 
     if args.debug:
         logger = init_debug_logger()
+        # set_verbosity_debug()
     else:
         logger = init_info_logger()
+        # set_verbosity_info()
 
     logger.info("Process started over CLI")
     logger.info("Source path: {}".format(source_path))

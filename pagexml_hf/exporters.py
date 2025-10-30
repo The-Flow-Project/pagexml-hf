@@ -18,6 +18,11 @@ from datasets import (
     Image as DatasetImage,
     disable_caching
 )
+from datasets.utils.logging import (
+    enable_progress_bar,
+    disable_progress_bar,
+    is_progress_bar_enabled,
+)
 
 from .parser import PageData, TextLine
 from .logger import logger
@@ -159,6 +164,7 @@ class BaseExporter(ABC):
                     print(f"    {image_path}: {error}")
                 if len(self.failed_images) > 5:
                     print(f"    ... and {len(self.failed_images) - 5} more")
+        print("#" * 60)
 
 
 class RawXMLExporter(BaseExporter):
@@ -173,9 +179,12 @@ class RawXMLExporter(BaseExporter):
     ]:
         """Export pages as image + raw XML pairs."""
         logger.info(f"Exporting raw XML content with images... (Processed: {len(pages)})")
+        if is_progress_bar_enabled():
+            disable_progress_bar()
 
         def generate_examples():
             """Generate examples from pages with images and XML content."""
+            logger.debug(f"Generating Raw XML content with images...")
             for page in tqdm(pages, desc="Generating RawXML dataset"):
                 image = page.image
                 if image:
@@ -200,12 +209,17 @@ class RawXMLExporter(BaseExporter):
         )
 
         #try:
+        # if not is_progress_bar_enabled():
+        #    enable_progress_bar()
+
+        logger.debug(f"Datasets progress bar is enabeld: {is_progress_bar_enabled()}")
         dataset = Dataset.from_generator(
             generate_examples, features=features  # default: cache_dir=None
         )
 
         logger.info(f"Dataset generated: {len(dataset)}")
         self._print_summary(dataset)
+        enable_progress_bar()
         return dataset
 
 
@@ -220,6 +234,10 @@ class TextExporter(BaseExporter):
         None
     ]:
         """Export pages as image + full text pairs."""
+
+        logger.info(f"Exporting text content with images... (Processed: {len(pages)})")
+        if is_progress_bar_enabled():
+            disable_progress_bar()
 
         def generate_examples():
             """
@@ -265,6 +283,7 @@ class TextExporter(BaseExporter):
             dataset = None
 
         self._print_summary(dataset)
+        enable_progress_bar()
         return dataset
 
 
@@ -286,6 +305,10 @@ class RegionExporter(BaseExporter):
         None
     ]:
         """Export each region as a separate dataset entry."""
+
+        logger.info(f"Exporting Region XML content with images... (Processed: {len(pages)})")
+        if is_progress_bar_enabled():
+            disable_progress_bar()
 
         def generate_examples():
             """
@@ -346,6 +369,7 @@ class RegionExporter(BaseExporter):
             dataset = None
 
         self._print_summary(dataset)
+        enable_progress_bar()
         return dataset
 
 
@@ -367,6 +391,9 @@ class LineExporter(BaseExporter):
         None
     ]:
         """Export each text line as a separate dataset entry."""
+        logger.info(f"Exporting line content with images... (Processed: {len(pages)})")
+        if is_progress_bar_enabled():
+            disable_progress_bar()
 
         def generate_examples():
             """
@@ -433,6 +460,7 @@ class LineExporter(BaseExporter):
             dataset = None
 
         self._print_summary(dataset)
+        enable_progress_bar()
         return dataset
 
 
@@ -468,6 +496,9 @@ class WindowExporter(BaseExporter):
         None
     ]:
         """Export sliding windows of lines as separate dataset entries."""
+        logger.info(f"Exporting window content with images... (Processed: {len(pages)})")
+        if is_progress_bar_enabled():
+            disable_progress_bar()
 
         def generate_examples():
             """
@@ -552,6 +583,7 @@ class WindowExporter(BaseExporter):
             dataset = None
 
         self._print_summary(dataset)
+        enable_progress_bar()
         return dataset
 
     def _create_windows(self, lines: List[TextLine]) -> List[List[TextLine]]:

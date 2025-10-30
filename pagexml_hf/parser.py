@@ -117,7 +117,7 @@ class XmlParser:
             projects = self._auto_group_files(file_list)
 
             for project_name, project_files in tqdm(projects.items(), desc="Processing Projects", total=len(projects)):
-                logger.info(f"Processing project: {project_name} ({len(project_files)} files)")
+                logger.debug(f"Processing project: {project_name} ({len(project_files)} files)")
                 xml_files = [
                     f
                     for f in project_files
