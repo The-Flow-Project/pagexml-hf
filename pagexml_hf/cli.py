@@ -11,6 +11,7 @@ from datasets.utils.logging import disable_progress_bar, enable_progress_bar
 
 from .converter import XmlConverter
 from .parser import XmlParser
+from .logger import init_debug_logger, init_info_logger
 
 
 class SourcePathAction(argparse.Action):
@@ -70,12 +71,15 @@ def main():
         help="Export mode (default: text)",
     )
 
+    # Changed to recognizing the namespace automatically
+    '''
     parser.add_argument(
         "--namespace",
         type=str,
         default=None,
         help="Namespace of the Page XML files (default: empty string)",
     )
+    '''
 
     parser.add_argument(
         "--window-size",
@@ -170,35 +174,51 @@ def main():
         help="Allow empty regions or lines (default: False)",
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Debug mode (default: False)",
+    )
+
     args = parser.parse_args()
     source_path, source_type = args.source_path
 
+    if args.debug:
+        logger = init_debug_logger()
+    else:
+        logger = init_info_logger()
+
+    logger.info("Process started over CLI")
+    logger.info("Source path: {}".format(source_path))
+    logger.info("Source type: {}".format(source_type))
+
     if not args.stats_only and not args.local_only and not args.repo_id:
-        print("Error: --repo-id is required unless using --stats-only or --local-only")
+        logger.error("Error: --repo-id is required unless using --stats-only or --local-only")
         sys.exit(1)
 
     if args.min_width is not None and args.min_width <= 0:
-        print("Error: --min-width has to be a positive integer")
+        logger.error("Error: --min-width has to be a positive integer")
         sys.exit(1)
 
     if args.min_height is not None and args.min_height <= 0:
-        print("Error: --min-height has to be a positive integer")
+        logger.error("Error: --min-height has to be a positive integer")
         sys.exit(1)
 
     # Validate window parameters
     if args.mode == "window":
         if args.window_size < 1:
-            print("Error: --window-size must be at least 1")
+            logger.error("Error: --window-size must be at least 1")
             sys.exit(1)
         if args.overlap < 0:
-            print("Error: --overlap cannot be negative")
+            logger.error("Error: --overlap cannot be negative")
             sys.exit(1)
         if args.overlap >= args.window_size:
-            print("Error: --overlap must be less than --window-size")
+            logger.error("Error: --overlap must be less than --window-size")
             sys.exit(1)
 
     # Initialize parser
-    xmlparser = XmlParser(namespace=args.namespace)
+    xmlparser = XmlParser()  # namespace=args.namespace
     pages = None
 
     if source_type == 'local':
@@ -208,10 +228,11 @@ def main():
     elif source_type == 'huggingface':
         pages = xmlparser.parse_dataset(source_path)
     else:
-        print("Error: Unsupported source")
+        logger.error("Error: Unsupported source")
         sys.exit(1)
 
     # Initialize converter
+    logger.info(f"Creating converter with {len(pages)} pages")
     converter = XmlConverter(
         pages=pages,
         source_path=source_path,
@@ -221,6 +242,7 @@ def main():
     # Show statistics if requested
     if args.stats_only:
         stats = converter.get_stats()
+        logger.info(f"Stats: {stats}")
         print("Dataset Statistics:")
         print(f"  Total pages: {stats['total_pages']}")
         print(f"  Total regions: {stats['total_regions']}")
@@ -238,7 +260,7 @@ def main():
                 estimated_windows += (
                         max(0, regions_with_lines - args.window_size + 1) // step
                 )
-            print(
+            logger.info(
                 f"  Estimated windows (window_size={args.window_size}, overlap={args.overlap}): ~{estimated_windows}"
             )
 
@@ -266,7 +288,7 @@ def main():
                 mode_suffix += f"_w{args.window_size}_o{args.overlap}"
             output_dir = args.output_dir or f"./pagexml_dataset{mode_suffix}"
             dataset.save_to_disk(output_dir)
-            print(f"Dataset saved to: {output_dir}")
+            logger.info(f"Dataset saved to: {output_dir}")
         else:
             # Upload to HuggingFace Hub
             repo_url = converter.upload_to_hub(
@@ -275,10 +297,10 @@ def main():
                 token=args.token,
                 private=args.private,
             )
-            print(f"Success! Dataset available at: {repo_url}")
+            logger.info(f"Success! Dataset available at: {repo_url}")
 
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         sys.exit(1)
 
 

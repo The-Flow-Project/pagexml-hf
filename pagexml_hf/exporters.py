@@ -4,21 +4,23 @@ Exporters for converting parsed Transkribus data to different HuggingFace datase
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, Union
+from tqdm import tqdm
 
 from PIL import Image, ImageFile
 import numpy as np
 import cv2
 from datasets import (
-  Dataset,
-  DatasetDict,
-  IterableDataset,
-  Features,
-  Value,
-  Image as DatasetImage,
-  disable_caching
+    Dataset,
+    DatasetDict,
+    IterableDataset,
+    Features,
+    Value,
+    Image as DatasetImage,
+    disable_caching
 )
 
 from .parser import PageData, TextLine
+from .logger import logger
 
 # Allow loading of truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -58,7 +60,7 @@ class BaseExporter(ABC):
         """Crop a region from an image based on coordinates, \
             optimized by pre-cropping to bounding box."""
         if not coords:
-            print("Warning: No coordinates provided for cropping.")
+            logger.warning("Warning: No coordinates provided for cropping.")
             self.skipped_count += 1
             return None
 
@@ -70,7 +72,7 @@ class BaseExporter(ABC):
             min_y, max_y = max(0, min(y_coords)), min(image.height, max(y_coords))
 
             if min_x >= max_x or min_y >= max_y:
-                print(f"Warning: Invalid crop coordinates: ({min_x}, {min_y}, {max_x}, {max_y})")
+                logger.warning(f"Warning: Invalid crop coordinates: ({min_x}, {min_y}, {max_x}, {max_y})")
                 self.skipped_count += 1
                 return None
 
@@ -100,7 +102,7 @@ class BaseExporter(ABC):
             return Image.fromarray(result_rgb)
 
         except Exception as e:
-            print(f"Warning: Error cropping region: {e}")
+            logger.warning(f"Warning: Error cropping region: {e}")
             return None
 
     @staticmethod
@@ -125,8 +127,8 @@ class BaseExporter(ABC):
         min_y, max_y = min(y_coords), max(y_coords)
 
         # Return as rectangle coordinates
+        logger.debug(f"calculated bounding box for coordinates: {min_x, min_y}, {max_x, max_y}")
         return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
-
 
     def _print_summary(
             self,
@@ -138,8 +140,9 @@ class BaseExporter(ABC):
                     dict[str, IterableDataset]
                 ]
             ] = None
-        ) -> None:
+    ) -> None:
         """Print processing summary."""
+        logger.info(f"Processing Summary:")
         print("#" * 60)
         if not dataset:
             print("No dataset created.")
@@ -169,11 +172,11 @@ class RawXMLExporter(BaseExporter):
         None
     ]:
         """Export pages as image + raw XML pairs."""
-        print(f"Exporting raw XML content with images... (Processed: {len(pages)})")
+        logger.info(f"Exporting raw XML content with images... (Processed: {len(pages)})")
 
         def generate_examples():
             """Generate examples from pages with images and XML content."""
-            for page in pages:
+            for page in tqdm(pages, desc="Generating RawXML dataset"):
                 image = page.image
                 if image:
                     self.processed_count += 1
@@ -200,10 +203,8 @@ class RawXMLExporter(BaseExporter):
         dataset = Dataset.from_generator(
             generate_examples, features=features  # default: cache_dir=None
         )
-        #except Exception as e:
-        #    print(f"Error creating dataset: {e}")
-        #    dataset = None
 
+        logger.info(f"Dataset generated: {len(dataset)}")
         self._print_summary(dataset)
         return dataset
 
@@ -224,7 +225,7 @@ class TextExporter(BaseExporter):
             """
             Generator for dataset creation.
             """
-            for page in pages:
+            for page in tqdm(pages, desc="Generating Text dataset"):
                 image = page.image
                 if image is not None:
                     # Concatenate all text from regions in reading order
@@ -260,7 +261,7 @@ class TextExporter(BaseExporter):
                 generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
-            print(f"Error creating dataset: {e}")
+            logger.error(f"Error creating dataset: {e}")
             dataset = None
 
         self._print_summary(dataset)
@@ -294,7 +295,7 @@ class RegionExporter(BaseExporter):
             if not check_region_text and not allow_empty:
                 raise ValueError("No region contains text. \
                                  Use allow_empty=True to export empty regions.")
-            for page in pages:
+            for page in tqdm(pages, desc="Generating Region dataset"):
                 full_image = page.image
                 if full_image is not None:
                     for region in page.regions:
@@ -338,10 +339,10 @@ class RegionExporter(BaseExporter):
                 generate_examples, features=features  # default: cache_dir=None
             )
         except ValueError as e:
-            print(f"ValueError creating dataset: {e}")
+            logger.error(f"ValueError creating dataset: {e}")
             dataset = None
         except Exception as e:
-            print(f"Error creating dataset: {e}")
+            logger.error(f"Error creating dataset: {e}")
             dataset = None
 
         self._print_summary(dataset)
@@ -375,10 +376,10 @@ class LineExporter(BaseExporter):
             if not check_region_text and not allow_empty:
                 raise ValueError("No region contains text. \
                                  Use allow_empty=True to export empty regions.")
-            for page in pages:
+            for page in tqdm(pages, desc="Generating Line dataset"):
                 full_image = page.image
                 if full_image is None:
-                    print(f"Warning: No image found for page {page.image_filename}")
+                    logger.warning(f"Warning: No image found for page {page.image_filename}")
                     self.skipped_count += 1
                     self.failed_images.append([page.image_filename, "No image found"])
                     continue
@@ -406,7 +407,6 @@ class LineExporter(BaseExporter):
                                     "project": page.project_name,
                                 }
 
-
         features = Features(
             {
                 "image": DatasetImage(),
@@ -426,10 +426,10 @@ class LineExporter(BaseExporter):
                 generate_examples, features=features  # default: cache_dir=None
             )
         except ValueError as e:
-            print(f"ValueError creating dataset: {e}")
+            logger.error(f"ValueError creating dataset: {e}")
             dataset = None
         except Exception as e:
-            print(f"Error creating dataset: {e}")
+            logger.error(f"Error creating dataset: {e}")
             dataset = None
 
         self._print_summary(dataset)
@@ -473,7 +473,7 @@ class WindowExporter(BaseExporter):
             """
             Generator for dataset creation.
             """
-            for page in pages:
+            for page in tqdm(pages, desc="Generating Window dataset"):
                 full_image = page.image
                 if full_image is None:
                     self.skipped_count += 1
@@ -548,7 +548,7 @@ class WindowExporter(BaseExporter):
                 generate_examples, features=features  # default: cache_dir=None
             )
         except Exception as e:
-            print(f"Error creating dataset: {e}")
+            logger.error(f"Error creating dataset: {e}")
             dataset = None
 
         self._print_summary(dataset)

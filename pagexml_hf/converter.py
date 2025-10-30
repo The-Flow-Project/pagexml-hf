@@ -17,6 +17,7 @@ from .exporters import (
     LineExporter,
     WindowExporter,
 )
+from .logger import logger
 
 disable_caching()  # Disable caching to save disk space
 
@@ -100,7 +101,7 @@ class XmlConverter:
                 window_size=window_size,
                 overlap=overlap,
             )
-            print(
+            logger.info(
                 f"Converting to {export_mode} format \
                     (window_size={window_size}, overlap={overlap})..."
             )
@@ -108,7 +109,7 @@ class XmlConverter:
             exporter = exporter_class(
                 pages=self.pages,
             )
-            print(f"Converting to {export_mode} format...")
+            logger.info(f"Converting to {export_mode} format...")
 
         # Export dataset
         if export_mode in ("line", "region"):
@@ -124,13 +125,13 @@ class XmlConverter:
             dataset = exporter.export(self.pages)
 
         if split_train is not None:
-            print(f"Splitting dataset into train and test sets (train size={split_train})...")
+            logger.info(f"Splitting dataset into train and test sets (train size={split_train})...")
             if not 0.0 < split_train < 1.0:
                 raise ValueError("split_train must be between 0 and 1")
             dataset = dataset.train_test_split(
                 train_size=split_train, shuffle=split_shuffle, seed=split_seed
             )
-            print(
+            logger.info(
                 f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}"
             )
 
@@ -167,7 +168,7 @@ class XmlConverter:
                 try:
                     token = get_token()
                 except Exception as e:
-                    print(f"Error getting token: {e}")
+                    logger.error(f"Error getting token: {e}")
 
         # If still no token, provide helpful error message
         if token is None:
@@ -187,20 +188,20 @@ class XmlConverter:
                 token=token,
                 exist_ok=True,
             )
-            print(f"Repository {repo_id} created/verified")
+            logger.info(f"Repository {repo_id} created/verified")
         except Exception as e:
-            print(f"Error creating repository: {e}")
+            logger.error(f"Error creating repository: {e}")
             raise
 
         # Upload dataset
         if commit_message is None:
             commit_message = f"Upload Transkribus dataset from {self.source_name}"
 
-        print(f"Uploading dataset to {repo_id}...")
+        logger.info(f"Uploading dataset to {repo_id}...")
         dataset.push_to_hub(repo_id=repo_id, token=token, commit_message=commit_message)
 
         repo_url = f"https://huggingface.co/datasets/{repo_id}"
-        print(f"Dataset uploaded successfully: {repo_url}")
+        logger.info(f"Dataset uploaded successfully: {repo_url}")
         return repo_url
 
     def convert_and_upload(

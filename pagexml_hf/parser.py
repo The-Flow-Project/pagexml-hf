@@ -9,12 +9,15 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple, Callable, Union, Mapping
+from tqdm import tqdm
 
 import requests
 import lxml.etree as ET
 import datasets
 from datasets import load_dataset, disable_caching
 from PIL import Image
+
+from .logger import logger
 
 import chardet
 
@@ -64,17 +67,8 @@ class XmlParser:
     Page XML files in a folder structure with images or image-URL in the XML.
     """
 
-    def __init__(self, namespace: Optional[str] = None):
-        if namespace:
-            self.namespace = {
-                "pc": namespace
-            }
-        else:
-            # Default namespace for PAGE XML
-            # This can be overridden if needed
-            self.namespace = {
-                "pc": "http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15"
-            }
+    def __init__(self):
+        logger.info(f"Initializing XmlParser")
 
     def parse_zip(self, zip_path: str) -> List[PageData]:
         """
@@ -122,8 +116,8 @@ class XmlParser:
             # Group files by project (top-level directory)
             projects = self._auto_group_files(file_list)
 
-            for project_name, project_files in projects.items():
-                print(f"Processing project: {project_name} ({len(project_files)} files)")
+            for project_name, project_files in tqdm(projects.items(), desc="Processing Projects", total=len(projects)):
+                logger.info(f"Processing project: {project_name} ({len(project_files)} files)")
                 xml_files = [
                     f
                     for f in project_files
@@ -163,12 +157,12 @@ class XmlParser:
             p.name: self._load_image(p.read_bytes()) for p in images_list
         }
         projects = self._auto_group_files(xml_files)
-        print(f"Found {len(images)} images")
-        print(f"Found {len(xml_files)} XML files")
-        print(f"Found {len(projects)} projects")
+        logger.info(f"Found {len(images)} images")
+        logger.info(f"Found {len(xml_files)} XML files")
+        logger.info(f"Found {len(projects)} projects")
 
         for project_name, project_files in projects.items():
-            print(f"Processing project: {project_name} ({len(project_files)} files)")
+            logger.info(f"Processing project: {project_name} ({len(project_files)} files)")
             xml_files = [
                 f
                 for f in project_files
@@ -186,7 +180,7 @@ class XmlParser:
                         raw_content = f.read()
                     return self._decode_bytes(raw_content, file_path)
                 except (OSError, IOError, UnicodeDecodeError) as e:
-                    print(f"Error reading {file_path}: {e}")
+                    logger.error(f"Error reading {file_path}: {e}")
                     return None
 
             pages.extend(self._parse_files(xml_files, file_loader, images, project_name))
@@ -209,7 +203,7 @@ class XmlParser:
             List of PageData objects
         """
 
-        print(f"Loading dataset {dataset}...")
+        logger.info(f"Loading dataset {dataset}...")
         if isinstance(dataset, str):
             try:
                 ds = load_dataset(dataset, split="train", token=token)
@@ -231,7 +225,7 @@ class XmlParser:
         for item in ds:
             xml_content = item.get("xml")
             if xml_content is None:
-                print("Skipping item without XML content")
+                logger.warning("Skipping item without XML content")
                 continue
 
             project_name = item.get("project", "unknown_project")
@@ -242,7 +236,7 @@ class XmlParser:
                     page_data.image = image
                 pages.append(page_data)
             else:
-                print("Skipping item with invalid XML content")
+                logger.warning("Skipping item with invalid XML content")
 
         return pages
 
@@ -256,9 +250,10 @@ class XmlParser:
         pages = []
         for file_path in file_paths:
             try:
+                logger.info(f"Parsing XML {file_path}")
                 xml_content = file_loader(file_path)
                 if xml_content is None:
-                    print(f"Skipping {file_path} due to read error")
+                    logger.warning(f"Skipping {file_path} due to read error")
                     continue
 
                 page_data = self._parse_page_xml(xml_content, project_name)
@@ -269,7 +264,7 @@ class XmlParser:
 
                     pages.append(page_data)
             except (ET.ParseError, ValueError, TypeError) as e:
-                print(f"Error parsing {file_path}: {e}")
+                logger.error(f"Error parsing {file_path}: {e}")
         return pages
 
     def _read_xml_with_encoding(
@@ -280,7 +275,7 @@ class XmlParser:
             raw_content = zip_file.read(xml_filename)
             return self._decode_bytes(raw_content, xml_filename)
         except (KeyError, OSError, IOError, zipfile.BadZipFile, zipfile.LargeZipFile) as e:
-            print(f"Error reading {xml_filename}: {e}")
+            logger.error(f"Error reading {xml_filename}: {e}")
             return None
 
     @staticmethod
@@ -305,7 +300,7 @@ class XmlParser:
             except UnicodeDecodeError:
                 continue
 
-        print(f"Could not decode {source_name} with any supported encoding")
+        logger.error(f"Could not decode {source_name} with any supported encoding")
         return None
 
     @staticmethod
@@ -332,18 +327,24 @@ class XmlParser:
     ) -> Optional[PageData]:
         """Parse a single PAGE XML file."""
         try:
-            root = ET.fromstring(
-                xml_content.encode(),
+            # logger.debug(f"Parsing XML {xml_content.encode()}")
+            tree = ET.parse(
+                io.BytesIO(xml_content.encode()),
                 parser=ET.XMLParser(
                     encoding='utf-8',
                     ns_clean=True,
                     compact=False,
                 )
             )
+            root = tree.getroot()
+            logger.debug(f"DefaultNamespace: {root.nsmap.get(None)}")
+            self.namespace = {'pc': root.nsmap.get(None)}
+            logger.debug(f"Namespace: {self.namespace}")
+
             # Get page element
             page_elem = root.find("pc:Page", self.namespace)
             if page_elem is None:
-                print("No Page element found in XML")
+                logger.warning("No Page element found in XML")
                 return None
 
             # Extract page metadata
@@ -378,7 +379,7 @@ class XmlParser:
             )
 
         except ET.ParseError as e:
-            print(f"XML parsing error: {e}")
+            logger.error(f"XML parsing error: {e}")
             return None
 
     def _auto_group_files(self, file_list: List[str]) -> Dict[str, List[str]]:
@@ -505,10 +506,10 @@ class XmlParser:
                 response.raise_for_status()
                 return response.content
             except requests.exceptions.Timeout:
-                print(f'Image download from {image_url} timed out')
+                logger.error(f'Image download from {image_url} timed out')
                 return None
             except requests.exceptions.RequestException as e:
-                print(f'Image download from {image_url} failed: {e}')
+                logger.error(f'Image download from {image_url} failed: {e}')
                 return None
 
         return None
@@ -529,7 +530,7 @@ class XmlParser:
 
         except (IOError, OSError, ValueError) as e:
             error_msg = f"Error loading image: {e}"
-            print(f"Warning: {error_msg}")
+            logger.error(f"Warning: {error_msg}")
             return None
 
     @staticmethod

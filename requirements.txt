@@ -55,6 +55,8 @@ idna==3.11
     #   httpx
     #   requests
     #   yarl
+loguru==0.7.3
+    # via pagexml-hf (pyproject.toml)
 lxml==6.0.2
     # via pagexml-hf (pyproject.toml)
 multidict==6.7.0

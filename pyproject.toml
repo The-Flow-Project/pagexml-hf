@@ -20,6 +20,7 @@ dependencies = [
     "chardet>=4.0.0",
     "datasets>=2.0.0",
     "huggingface-hub>=0.15.0",
+    "loguru>=0.7.3",
     "lxml>=4.6.0",
     "numpy>=1.21.0",
     "opencv-python>=4.5.0",
