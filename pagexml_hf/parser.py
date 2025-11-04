@@ -8,7 +8,7 @@ import io
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Tuple, Callable, Union, Mapping
+from typing import Generator, Dict, List, Optional, Tuple, Callable, Union, Mapping
 from tqdm import tqdm
 
 import requests
@@ -49,15 +49,21 @@ class TextRegion:
 
 
 @dataclass
-class PageData:
-    """Represents a complete page with metadata and content."""
+class PageStats:
+    """Represents statistics of a PAGE XML file."""
 
     image_filename: str
     image_width: int
     image_height: int
     regions: List[TextRegion]
-    xml_content: str
     project_name: str
+
+
+@dataclass
+class PageData(PageStats):
+    """Represents a complete page with metadata and content."""
+
+    xml_content: str
     image: Optional[Image.Image] = None
 
 
@@ -69,18 +75,20 @@ class XmlParser:
 
     def __init__(self):
         logger.info(f"Initializing XmlParser")
+        self.total_pages: int | None = None
+        self.batches: int | None = None
 
-    def parse_zip(self, zip_path: str) -> List[PageData]:
+    def iter_parse_zip(self, zip_path: str, batch_size: int = 100) -> Generator[List[PageData], None, None]:
         """
         Parse a Transkribus ZIP file and extract all page data.
 
         Args:
             zip_path: Path or URL to the ZIP file
+            batch_size: Batch size for parsing
 
         Returns:
             List of PageData objects
         """
-        zip_file = None
 
         if zip_path.startswith("http://") or zip_path.startswith("https://"):
             try:
@@ -97,27 +105,26 @@ class XmlParser:
                 raise ValueError(f"{zip_path} is not a valid ZIP file")
             zip_file = zipfile.ZipFile(zip_path)
 
-        pages = []
-
         with zip_file:
             # Get all files in the ZIP
             file_list = zip_file.namelist()
+
             image_files = [
                 f for f in file_list
                 if f.lower().endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff"))
                    and not self._is_macos_metadata_file(f)
             ]
-            images = {
-                os.path.basename(i): self._load_image(zip_file.read(i)) for i in image_files
-            }
+
             # remove image files from file_list (faster)
-            file_list = [f for f in file_list if f not in image_files]
+            file_list = [f for f in file_list if f.lower().endswith(".xml")]
+            self.total_pages = len(file_list)
+            self.batches = int(len(file_list) // batch_size)
 
             # Group files by project (top-level directory)
             projects = self._auto_group_files(file_list)
 
             for project_name, project_files in tqdm(projects.items(), desc="Processing Projects", total=len(projects)):
-                logger.debug(f"Processing project: {project_name} ({len(project_files)} files)")
+                logger.info(f"Processing project: {project_name} ({len(project_files)} files)")
                 xml_files = [
                     f
                     for f in project_files
@@ -126,38 +133,60 @@ class XmlParser:
                        and not self._is_macos_metadata_file(f)
                 ]
 
-                def file_loader(f: str) -> Optional[str]:
-                    """
-                    Load XML file content with automatic encoding detection.
-                    """
-                    return self._read_xml_with_encoding(zip_file, f)
+                logger.debug(f"Found {len(xml_files)} XML files, {len(image_files)} images")
 
-                pages.extend(self._parse_files(xml_files, file_loader, images, project_name))
+                batch = []
+                for xml_filename in xml_files:
+                    logger.info(f"Processing file: {xml_filename}")
+                    xml_content = self._read_xml_with_encoding(zip_file, xml_filename)
+                    if not xml_content:
+                        logger.warning(f"Skipping file: {xml_filename}")
+                        continue
 
-        return pages
+                    try:
+                        page_data = self._parse_page_xml(xml_content, project_name)
+                    except Exception as e:
+                        logger.error(f"Error parsing page {xml_filename}: {e}")
 
-    def parse_folder(self, folder_path: str) -> List[PageData]:
+                    if page_data and page_data.image_filename:
+                        image_path = None
+                        for p in image_files:
+                            if page_data.image_filename in p:
+                                image_path = p
+                        try:
+                            img_data = self._load_image(zip_file.read(str(image_path)))
+                            page_data.image = img_data
+                        except Exception as e:
+                            logger.error(f"Failed to attach image: {e}")
+
+                    if page_data:
+                        batch.append(page_data)
+
+                    if len(batch) >= batch_size:
+                        yield batch
+                        batch = []
+
+                if batch:
+                    yield batch
+
+    def iter_parse_folder(self, folder_path: str, batch_size: int = 100) -> Generator[List[PageData], None, None]:
         """
         Parse PAGE XML files from a folder path mimicking Transkribus structure.
 
         Args:
             folder_path: Path to the folder
+            batch_size: Batch size for parsing
 
         Returns:
             List of PageData objects
         """
-        pages = []
+        page_data = None
         folder = Path(folder_path)
         xml_files = [str(p) for p in folder.rglob("*.xml") if p.is_file()]
-        images_list = [
-            p for p in folder.rglob("*")
-            if p.is_file() and p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']
-        ]
-        images = {
-            p.name: self._load_image(p.read_bytes()) for p in images_list
-        }
+        self.total_pages = len(xml_files)
+        self.batches = int(len(xml_files) // batch_size)
+
         projects = self._auto_group_files(xml_files)
-        logger.info(f"Found {len(images)} images")
         logger.info(f"Found {len(xml_files)} XML files")
         logger.info(f"Found {len(projects)} projects")
 
@@ -168,6 +197,12 @@ class XmlParser:
                 for f in project_files
                 if f.endswith(".xml")
                    and not self._is_metadata_file(f)
+                   and not self._is_macos_metadata_file(f)
+            ]
+
+            image_files = [
+                f for f in project_files
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff"))
                    and not self._is_macos_metadata_file(f)
             ]
 
@@ -183,21 +218,49 @@ class XmlParser:
                     logger.error(f"Error reading {file_path}: {e}")
                     return None
 
-            pages.extend(self._parse_files(xml_files, file_loader, images, project_name))
+            batch = []
+            for xml_filename in xml_files:
+                logger.debug(f"Processing file: {xml_filename}")
+                xml_content = file_loader(xml_filename)
+                if not xml_content:
+                    logger.debug(f"Skipping file: {xml_filename}")
+                    continue
 
-        return pages
+                try:
+                    page_data = self._parse_page_xml(xml_content, project_name)
+                except Exception as e:
+                    logger.error(f"Error parsing page {xml_filename}: {e}")
 
-    def parse_dataset(
+                if page_data and page_data.image_filename in image_files:
+                    try:
+                        img_data = self._load_image(Path(page_data.image_filename).read_bytes())
+                        page_data.image = img_data
+                    except Exception as e:
+                        logger.error(f"Failed to attach image: {e}")
+
+                if page_data:
+                    batch.append(page_data)
+
+                if len(batch) >= batch_size:
+                    yield batch
+                    batch = []
+
+            if batch:
+                yield batch
+
+    def iter_parse_dataset(
             self,
             dataset: Union[str, datasets.Dataset],
-            token: Optional[str] = None
-    ) -> List[PageData]:
+            token: Optional[str] = None,
+            batch_size: int = 100,
+    ) -> Generator[List[PageData], None, None]:
         """
         Parse a HuggingFace dataset containing PAGE XML files.
 
         Args:
             dataset: HuggingFace dataset ID or Dataset object
             token: Optional HuggingFace token for private datasets
+            batch_size: Batch size for parsing
 
         Returns:
             List of PageData objects
@@ -220,8 +283,12 @@ class XmlParser:
         column_names = ds.column_names if isinstance(ds.column_names, list) else []
         if not set(column_names).issuperset(['image', 'xml']):
             raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
-        pages = []
 
+        logger.debug(f"Dataset loaded:\n{ds}")
+        self.total_pages = len(ds)
+        self.batches = int(self.total_pages // batch_size)
+
+        batch = []
         for item in ds:
             xml_content = item.get("xml")
             if xml_content is None:
@@ -234,11 +301,16 @@ class XmlParser:
                 image = item.get("image")
                 if image is not None:
                     page_data.image = image
-                pages.append(page_data)
+                batch.append(page_data)
             else:
                 logger.warning("Skipping item with invalid XML content")
 
-        return pages
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
 
     def _parse_files(
             self,

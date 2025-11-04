@@ -2,11 +2,11 @@
 Main converter class for Transkribus to HuggingFace datasets.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Generator, Optional, Dict, Any, List
 from pathlib import Path
 import os
 
-from datasets import Dataset, disable_caching
+from datasets import Dataset, disable_caching, concatenate_datasets
 from huggingface_hub import create_repo, get_token
 
 from .parser import PageData
@@ -36,7 +36,7 @@ class XmlConverter:
 
     def __init__(
             self,
-            pages: List[PageData],
+            pages: List[PageData] | Generator[PageData, None, None] | Generator[List[PageData], None, None],
             source_path: Optional[str] = None,
             source_type: Optional[str] = None,
     ):
@@ -45,8 +45,12 @@ class XmlConverter:
 
         Args:
             pages (PageData): Pages data to convert.
+            source_path (str, optional): Source path for the data to convert.
+            source_type (str, optional): Source type for the data to convert.
         """
         self.pages = pages
+        self.exporter = None
+
         if source_type in ['huggingface', 'zip_url'] and source_path is not None:
             self.source_name = source_path
         elif source_type in ['zip', 'local'] and source_path is not None:
@@ -96,8 +100,7 @@ class XmlConverter:
 
         # Handle both zip and folder path for exporters
         if export_mode == "window":
-            exporter = exporter_class(
-                pages=self.pages,
+            self.exporter = exporter_class(
                 window_size=window_size,
                 overlap=overlap,
             )
@@ -106,23 +109,30 @@ class XmlConverter:
                     (window_size={window_size}, overlap={overlap})..."
             )
         else:
-            exporter = exporter_class(
-                pages=self.pages,
-            )
+            self.exporter = exporter_class()
             logger.info(f"Converting to {export_mode} format...")
 
         # Export dataset
-        if export_mode in ("line", "region"):
-            # For line and region modes, we can apply mask cropping
-            dataset = exporter.export(
-                self.pages,
-                mask=mask_crop,
-                min_width=min_width,
-                min_height=min_height,
-                allow_empty=allow_empty,
-            )
-        else:
-            dataset = exporter.export(self.pages)
+        dataset = None
+        for page_batch in self._page_iterator():
+            logger.debug(f"Page batch: {type(page_batch)}")
+            if export_mode in ("line", "region"):
+                # For line and region modes, we can apply mask cropping
+                new_dataset = self.exporter.export(
+                    page_batch,
+                    mask=mask_crop,
+                    min_width=min_width,
+                    min_height=min_height,
+                    allow_empty=allow_empty,
+                )
+            else:
+                new_dataset = self.exporter.export(page_batch)
+
+            if new_dataset:
+                if dataset is None:
+                    dataset = new_dataset
+                else:
+                    dataset = concatenate_datasets([new_dataset, dataset])
 
         if split_train is not None:
             logger.info(f"Splitting dataset into train and test sets (train size={split_train})...")
@@ -250,27 +260,47 @@ class XmlConverter:
             commit_message=commit_message,
         )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def _page_iterator(self) -> Generator[List[PageData], None, None]:
+        if isinstance(self.pages, list):
+            yield self.pages
+        else:
+            for maybe_batch in self.pages:
+                if isinstance(maybe_batch, list):
+                    yield maybe_batch
+                else:
+                    yield [maybe_batch]
+
+    def get_stats(self) -> Dict[str, Any] | None:
         """
         Get statistics about the parsed data.
 
         Returns:
             Dictionary with statistics
         """
-        total_regions = sum(len(page.regions) for page in self.pages)
-        total_lines = sum(
-            len(region.text_lines) for page in self.pages for region in page.regions
-        )
+        if self.exporter.page_stats and len(self.exporter.page_stats) > 0:
+            stats = self.exporter.page_stats
+            total_regions = sum(len(page.regions) for page in stats)
+            total_lines = sum(
+                len(region.text_lines) for page in stats for region in page.regions
+            )
 
-        projects = set(page.project_name for page in self.pages)
+            projects = list(set(page.project_name for page in stats))
+            avg_regions_per_page = total_regions / len(stats)
+            avg_lines_per_page = total_lines / len(stats)
+        else:
+            logger.info("No page stats available")
+            stats = []
+            total_regions = 0
+            total_lines = 0
+            projects = []
+            avg_regions_per_page = 0
+            avg_lines_per_page = 0
 
         return {
-            "total_pages": len(self.pages),
+            "total_pages": len(stats),
             "total_regions": total_regions,
             "total_lines": total_lines,
-            "projects": list(projects),
-            "avg_regions_per_page": total_regions / len(self.pages)
-            if self.pages
-            else 0,
-            "avg_lines_per_page": total_lines / len(self.pages) if self.pages else 0,
+            "projects": projects,
+            "avg_regions_per_page": avg_regions_per_page,
+            "avg_lines_per_page": avg_lines_per_page,
         }

@@ -5,10 +5,9 @@ Command-line interface for transkribus-hf.
 import argparse
 import os
 import sys
+import shutil
 from pathlib import Path
 from datasets import get_dataset_config_names
-from datasets.utils.logging import disable_progress_bar, enable_progress_bar
-from datasets.utils.logging import set_verbosity_info, set_verbosity_debug
 
 from .converter import XmlConverter
 from .parser import XmlParser
@@ -132,9 +131,9 @@ def main():
     )
 
     parser.add_argument(
-        "--stats-only",
+        "--get-stats",
         action="store_true",
-        help="Only show statistics, don't convert or upload",
+        help="Show statistics after converting/upload (default: False)",
     )
 
     parser.add_argument(
@@ -177,6 +176,13 @@ def main():
     )
 
     parser.add_argument(
+        "--batchsize",
+        type=int,
+        default=1000,
+        help="Number of files per batch (default: 1000).",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         default=False,
@@ -188,17 +194,16 @@ def main():
 
     if args.debug:
         logger = init_debug_logger()
-        # set_verbosity_debug()
+
     else:
         logger = init_info_logger()
-        # set_verbosity_info()
 
     logger.info("Process started via CLI")
     logger.info("Source path: {}".format(source_path))
     logger.info("Source type: {}".format(source_type))
 
-    if not args.stats_only and not args.local_only and not args.repo_id:
-        logger.error("Error: --repo-id is required unless using --stats-only or --local-only")
+    if not args.local_only and not args.repo_id:
+        logger.error("Error: --repo-id is required unless using --local-only")
         sys.exit(1)
 
     if args.min_width is not None and args.min_width <= 0:
@@ -222,53 +227,27 @@ def main():
             sys.exit(1)
 
     # Initialize parser
-    xmlparser = XmlParser()  # namespace=args.namespace
+    xmlparser = XmlParser()
     pages = None
 
+    # Get back a page generator
     if source_type == 'local':
-        pages = xmlparser.parse_folder(source_path)
+        pages = xmlparser.iter_parse_folder(source_path, batch_size=args.batchsize)
     elif source_type in ['zip', 'zip_url']:
-        pages = xmlparser.parse_zip(source_path)
+        pages = xmlparser.iter_parse_zip(source_path, batch_size=args.batchsize)
     elif source_type == 'huggingface':
-        pages = xmlparser.parse_dataset(source_path)
+        pages = xmlparser.iter_parse_dataset(source_path, batch_size=args.batchsize)
     else:
         logger.error("Error: Unsupported source")
         sys.exit(1)
 
     # Initialize converter
-    logger.info(f"Creating converter with {len(pages)} pages")
+    logger.info(f"Creating converter with pages generator")
     converter = XmlConverter(
         pages=pages,
         source_path=source_path,
         source_type=source_type,
     )
-
-    # Show statistics if requested
-    if args.stats_only:
-        stats = converter.get_stats()
-        logger.info(f"Stats: {stats}")
-        print("Dataset Statistics:")
-        print(f"  Total pages: {stats['total_pages']}")
-        print(f"  Total regions: {stats['total_regions']}")
-        print(f"  Total lines: {stats['total_lines']}")
-        print(f"  Projects: {', '.join(stats['projects'])}")
-        print(f"  Avg regions per page: {stats['avg_regions_per_page']:.1f}")
-        print(f"  Avg lines per page: {stats['avg_lines_per_page']:.1f}")
-
-        # For window mode, show expected window count
-        if args.mode == "window":
-            step = args.window_size - args.overlap
-            estimated_windows = 0
-            for _ in ["total_regions"]:  # This is a rough estimate
-                regions_with_lines = stats["total_lines"] // 5  # rough estimate
-                estimated_windows += (
-                        max(0, regions_with_lines - args.window_size + 1) // step
-                )
-            logger.info(
-                f"  Estimated windows (window_size={args.window_size}, overlap={args.overlap}): ~{estimated_windows}"
-            )
-
-        return
 
     try:
         # Convert the dataset
@@ -291,6 +270,8 @@ def main():
             if args.mode == "window":
                 mode_suffix += f"_w{args.window_size}_o{args.overlap}"
             output_dir = args.output_dir or f"./pagexml_dataset{mode_suffix}"
+            if os.path.exists(output_dir):
+                shutil.rmtree(output_dir)
             dataset.save_to_disk(output_dir)
             logger.info(f"Dataset saved to: {output_dir}")
         else:
@@ -302,6 +283,33 @@ def main():
                 private=args.private,
             )
             logger.info(f"Success! Dataset available at: {repo_url}")
+
+        # Show statistics if requested
+        if args.get_stats:
+            stats = converter.get_stats()
+            logger.info(f"Stats: {stats}")
+            print("Dataset Statistics:")
+            print(f"  Total pages: {stats['total_pages']}")
+            print(f"  Total regions: {stats['total_regions']}")
+            print(f"  Total lines: {stats['total_lines']}")
+            print(f"  Projects: {', '.join(stats['projects'])}")
+            print(f"  Avg regions per page: {stats['avg_regions_per_page']:.1f}")
+            print(f"  Avg lines per page: {stats['avg_lines_per_page']:.1f}")
+
+            # For window mode, show expected window count
+            if args.mode == "window":
+                step = args.window_size - args.overlap
+                estimated_windows = 0
+                for _ in ["total_regions"]:  # This is a rough estimate
+                    regions_with_lines = stats["total_lines"] // 5  # rough estimate
+                    estimated_windows += (
+                            max(0, regions_with_lines - args.window_size + 1) // step
+                    )
+                logger.info(
+                    f"  Estimated windows (window_size={args.window_size}, \
+                    overlap={args.overlap}): ~{estimated_windows}"
+                )
+
 
     except Exception as e:
         logger.error(f"Error: {e}")

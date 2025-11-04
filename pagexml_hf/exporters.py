@@ -24,7 +24,7 @@ from datasets.utils.logging import (
     is_progress_bar_enabled,
 )
 
-from .parser import PageData, TextLine
+from .parser import PageData, PageStats, TextLine
 from .logger import logger
 
 # Allow loading of truncated images
@@ -35,14 +35,11 @@ disable_caching()
 class BaseExporter(ABC):
     """Base class for all exporters."""
 
-    def __init__(
-            self,
-            pages: List[PageData],
-    ):
-        self.pages = pages
+    def __init__(self):
         self.failed_images = []
         self.processed_count = 0
         self.skipped_count = 0
+        self.page_stats: List[PageStats] = []
 
     @abstractmethod
     def export(self, pages: List[PageData]) -> Union[
@@ -109,6 +106,16 @@ class BaseExporter(ABC):
         except Exception as e:
             logger.warning(f"Warning: Error cropping region: {e}")
             return None
+
+    @staticmethod
+    def _add_to_stats(page: PageData) -> PageStats:
+        return PageStats(
+            page.image_filename,
+            page.image_width,
+            page.image_height,
+            page.regions,
+            page.project_name,
+        )
 
     @staticmethod
     def _calculate_bounding_box(
@@ -186,6 +193,7 @@ class RawXMLExporter(BaseExporter):
             """Generate examples from pages with images and XML content."""
             logger.debug(f"Generating Raw XML content with images...")
             for page in tqdm(pages, desc="Generating RawXML dataset"):
+                self.page_stats.append(self._add_to_stats(page))
                 image = page.image
                 if image:
                     self.processed_count += 1
@@ -207,10 +215,6 @@ class RawXMLExporter(BaseExporter):
                 "project": Value("string"),
             }
         )
-
-        #try:
-        # if not is_progress_bar_enabled():
-        #    enable_progress_bar()
 
         logger.debug(f"Datasets progress bar is enabeld: {is_progress_bar_enabled()}")
         dataset = Dataset.from_generator(
@@ -244,6 +248,7 @@ class TextExporter(BaseExporter):
             Generator for dataset creation.
             """
             for page in tqdm(pages, desc="Generating Text dataset"):
+                self.page_stats.append(self._add_to_stats(page))
                 image = page.image
                 if image is not None:
                     # Concatenate all text from regions in reading order
@@ -319,6 +324,7 @@ class RegionExporter(BaseExporter):
                 raise ValueError("No region contains text. \
                                  Use allow_empty=True to export empty regions.")
             for page in tqdm(pages, desc="Generating Region dataset"):
+                self.page_stats.append(self._add_to_stats(page))
                 full_image = page.image
                 if full_image is not None:
                     for region in page.regions:
@@ -404,6 +410,7 @@ class LineExporter(BaseExporter):
                 raise ValueError("No region contains text. \
                                  Use allow_empty=True to export empty regions.")
             for page in tqdm(pages, desc="Generating Line dataset"):
+                self.page_stats.append(self._add_to_stats(page))
                 full_image = page.image
                 if full_image is None:
                     logger.warning(f"Warning: No image found for page {page.image_filename}")
@@ -469,7 +476,6 @@ class WindowExporter(BaseExporter):
 
     def __init__(
             self,
-            pages: List[PageData],
             window_size: int = 2,
             overlap: int = 0,
     ):
@@ -477,11 +483,10 @@ class WindowExporter(BaseExporter):
         Initialize the window exporter.
 
         Args:
-            pages: The PagesData list to export.
             window_size: Number of lines per window (1, 2, 3, etc.)
             overlap: Number of lines to overlap between windows
         """
-        super().__init__(pages=pages)
+        super().__init__()
         self.window_size = window_size
         self.overlap = overlap
 
@@ -505,6 +510,7 @@ class WindowExporter(BaseExporter):
             Generator for dataset creation.
             """
             for page in tqdm(pages, desc="Generating Window dataset"):
+                self.page_stats.append(self._add_to_stats(page))
                 full_image = page.image
                 if full_image is None:
                     self.skipped_count += 1
