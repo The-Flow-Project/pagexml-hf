@@ -2,14 +2,14 @@
 Main converter class for Transkribus to HuggingFace datasets.
 """
 
-from typing import Generator, Optional, Dict, Any, List
+from typing import Dict, Any
 from pathlib import Path
+import pandas as pd
 import os
 
-from datasets import Dataset, disable_caching, concatenate_datasets
+from datasets import Dataset, IterableDataset
 from huggingface_hub import create_repo, get_token
 
-from .parser import PageData
 from .exporters import (
     RawXMLExporter,
     TextExporter,
@@ -18,8 +18,6 @@ from .exporters import (
     WindowExporter,
 )
 from .logger import logger
-
-disable_caching()  # Disable caching to save disk space
 
 
 class XmlConverter:
@@ -36,15 +34,15 @@ class XmlConverter:
 
     def __init__(
             self,
-            pages: List[PageData] | Generator[PageData, None, None] | Generator[List[PageData], None, None],
-            source_path: Optional[str] = None,
-            source_type: Optional[str] = None,
+            pages: pd.DataFrame,
+            source_path: str | None = None,
+            source_type: str | None = None,
     ):
         """
         Initialize the converter.
 
         Args:
-            pages (PageData): Pages data to convert.
+            pages (pd.DataFrame): Dataframe with pages data to convert.
             source_path (str, optional): Source path for the data to convert.
             source_type (str, optional): Source type for the data to convert.
         """
@@ -63,14 +61,14 @@ class XmlConverter:
             export_mode: str = "text",
             window_size: int = 2,
             overlap: int = 0,
-            split_train: Optional[float] = None,
-            split_seed: Optional[int] = 42,
-            split_shuffle: Optional[bool] = False,
-            mask_crop: Optional[bool] = False,
-            min_width: Optional[int] = None,
-            min_height: Optional[int] = None,
-            allow_empty: Optional[bool] = False,
-    ) -> Dataset:
+            split_train: float | None = None,
+            split_seed: int | None = 42,
+            split_shuffle: bool | None = False,
+            mask_crop: bool | None = False,
+            min_width: int | None = None,
+            min_height: int | None = None,
+            allow_empty: bool | None = False,
+    ) -> Dataset | IterableDataset:
         """
         Convert parsed data to a HuggingFace dataset.
 
@@ -113,26 +111,18 @@ class XmlConverter:
             logger.info(f"Converting to {export_mode} format...")
 
         # Export dataset
-        dataset = None
-        for page_batch in self._page_iterator():
-            logger.debug(f"Page batch: {type(page_batch)}")
-            if export_mode in ("line", "region"):
-                # For line and region modes, we can apply mask cropping
-                new_dataset = self.exporter.export(
-                    page_batch,
-                    mask=mask_crop,
-                    min_width=min_width,
-                    min_height=min_height,
-                    allow_empty=allow_empty,
-                )
-            else:
-                new_dataset = self.exporter.export(page_batch)
-
-            if new_dataset:
-                if dataset is None:
-                    dataset = new_dataset
-                else:
-                    dataset = concatenate_datasets([new_dataset, dataset])
+        if export_mode in ("line", "region"):
+            # For line and region modes, we can apply mask cropping
+            dataset = self.exporter.export(
+                self.pages,
+                mask=mask_crop,
+                min_width=min_width,
+                min_height=min_height,
+                allow_empty=allow_empty,
+            )
+        else:
+            dataset = self.exporter.export(self.pages)
+        logger.info(f"Exported dataset")
 
         if split_train is not None:
             logger.info(f"Splitting dataset into train and test sets (train size={split_train})...")
@@ -149,11 +139,11 @@ class XmlConverter:
 
     def upload_to_hub(
             self,
-            dataset: Dataset,
+            dataset: Dataset | IterableDataset,
             repo_id: str,
-            token: Optional[str] = None,
+            token: str | None = None,
             private: bool = False,
-            commit_message: Optional[str] = None,
+            commit_message: str | None = None,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub.
@@ -208,7 +198,11 @@ class XmlConverter:
             commit_message = f"Upload Transkribus dataset from {self.source_name}"
 
         logger.info(f"Uploading dataset to {repo_id}...")
-        dataset.push_to_hub(repo_id=repo_id, token=token, commit_message=commit_message)
+        dataset.push_to_hub(
+            repo_id=repo_id,
+            token=token,
+            commit_message=commit_message,
+        )
 
         repo_url = f"https://huggingface.co/datasets/{repo_id}"
         logger.info(f"Dataset uploaded successfully: {repo_url}")
@@ -218,14 +212,14 @@ class XmlConverter:
             self,
             repo_id: str,
             export_mode: str = "text",
-            token: Optional[str] = None,
+            token: str | None = None,
             private: bool = False,
-            commit_message: Optional[str] = None,
+            commit_message: str | None = None,
             window_size: int = 2,
             overlap: int = 0,
-            split_train: Optional[float] = None,
-            split_seed: Optional[int] = 42,
-            split_shuffle: Optional[bool] = False,
+            split_train: float | None = None,
+            split_seed: int | None = 42,
+            split_shuffle: bool | None = False,
     ) -> str:
         """
         Convert and upload in one step.
@@ -260,16 +254,6 @@ class XmlConverter:
             commit_message=commit_message,
         )
 
-    def _page_iterator(self) -> Generator[List[PageData], None, None]:
-        if isinstance(self.pages, list):
-            yield self.pages
-        else:
-            for maybe_batch in self.pages:
-                if isinstance(maybe_batch, list):
-                    yield maybe_batch
-                else:
-                    yield [maybe_batch]
-
     def get_stats(self) -> Dict[str, Any] | None:
         """
         Get statistics about the parsed data.
@@ -277,27 +261,32 @@ class XmlConverter:
         Returns:
             Dictionary with statistics
         """
-        if self.exporter.page_stats and len(self.exporter.page_stats) > 0:
-            stats = self.exporter.page_stats
-            total_regions = sum(len(page.regions) for page in stats)
-            total_lines = sum(
-                len(region.text_lines) for page in stats for region in page.regions
-            )
+        if self.pages is not None and "regions" in self.pages.columns:
+            length = self.pages.shape[0]
+            total_regions = self.pages["regions"].apply(len).sum()
 
-            projects = list(set(page.project_name for page in stats))
-            avg_regions_per_page = total_regions / len(stats)
-            avg_lines_per_page = total_lines / len(stats)
+            total_lines = self.pages.apply(
+                lambda row: sum(len(region["text_lines"]) for region in row["regions"]),
+                axis=1
+            ).sum()
+            projects = self.pages["project_name"].unique().tolist()
+
+            avg_regions_per_page = total_regions / self.pages.shape[0]
+            avg_lines_per_page = total_lines / self.pages.shape[0]
         else:
             logger.info("No page stats available")
-            stats = []
+            length = 0
             total_regions = 0
             total_lines = 0
             projects = []
             avg_regions_per_page = 0
             avg_lines_per_page = 0
 
+        if self.pages is not None:
+            length = self.pages.shape[0]
+
         return {
-            "total_pages": len(stats),
+            "total_pages": length,
             "total_regions": total_regions,
             "total_lines": total_lines,
             "projects": projects,
