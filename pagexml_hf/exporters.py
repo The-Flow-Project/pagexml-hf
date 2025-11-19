@@ -4,6 +4,7 @@ Exporters for converting parsed Transkribus data to different HuggingFace datase
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union, Dict, Any
+from cachetools import TTLCache, cached
 
 from PIL import ImageFile
 import pandas as pd
@@ -140,6 +141,10 @@ class BaseExporter(ABC):
             "project_name": flat_proj,
         }
 
+    @cached(cache=TTLCache(maxsize=100, ttl=600))
+    def _from_pandas_cached(self, df: pd.DataFrame, features: Features) -> Dataset:
+        return Dataset.from_pandas(df, preserve_index=False, features=features)
+
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
 
@@ -159,11 +164,9 @@ class RawXMLExporter(BaseExporter):
                 "project_name": Value("string"),
             }
         )
-
         logger.debug(f"Get dataset from Pandas DataFrame")
-        dataset = Dataset.from_pandas(
-            pages, preserve_index=False, features=features  # default: cache_dir=None
-        )
+        dataset = self._from_pandas_cached(pages, features)
+
         logger.debug(f"Dataset from pandas generated")
         dataset = dataset.flatten_indices()
         dataset = dataset.to_iterable_dataset(num_shards=5)
@@ -302,6 +305,7 @@ class RegionExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_pandas(pages, preserve_index=False, features=PRE_FEATURES)
+            dataset = dataset.flatten_indices()
             dataset = dataset.to_iterable_dataset()
             dataset = dataset.map(
                 image_processor.correct_orientation,
@@ -372,6 +376,7 @@ class LineExporter(BaseExporter):
 
         try:
             dataset = Dataset.from_pandas(pages, preserve_index=False, features=PRE_FEATURES)
+            dataset = dataset.flatten_indices()
             dataset = dataset.to_iterable_dataset()
             dataset = dataset.map(
                 image_processor.correct_orientation,
