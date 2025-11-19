@@ -10,8 +10,6 @@ anyio==4.11.0
     # via httpx
 attrs==25.4.0
     # via aiohttp
-cachetools==6.2.2
-    # via pagexml-hf (pyproject.toml)
 certifi==2025.10.5
     # via
     #   httpcore

@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 from datasets import load_dataset
 from tqdm import tqdm
+from PIL import Image
 
 from .logger import logger
 
@@ -106,7 +107,7 @@ class XmlParser:
 
             for xml_filename in tqdm(file_list, total=len(file_list), desc="Parsing XML files"):
                 row = {}
-                logger.info(f"Processing file: {str(xml_filename)}")
+                logger.debug(f"Processing file: {str(xml_filename)}")
                 xml_content = self._read_xml_with_encoding(zip_file, str(xml_filename))
                 if not xml_content:
                     logger.warning(f"Skipping file: {str(xml_filename)}")
