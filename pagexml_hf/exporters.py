@@ -56,13 +56,9 @@ class BaseExporter(ABC):
 
     def __init__(
             self,
-            crop: bool = False,
-            min_width: int | None = None,
-            min_height: int | None = None,
+            batch_size: int = 32,
     ):
-        self.crop: bool = crop
-        self.min_width: int = min_width
-        self.min_height: int = min_height
+        self.batch_size: int = batch_size
 
     @abstractmethod
     def process_dataset(self, dataset: Dataset) -> Dataset:
@@ -71,6 +67,9 @@ class BaseExporter(ABC):
 
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
+
+    def __init__(self, batch_size: int = 32):
+        super().__init__(batch_size)
 
     def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + raw XML pairs."""
@@ -109,7 +108,7 @@ class RawXMLExporter(BaseExporter):
             dataset = dataset.map(
                 map_raw,
                 batched=True,
-                batch_size=32,
+                batch_size=self.batch_size,
                 features=features,
                 remove_columns=dataset.column_names,
             )
@@ -126,6 +125,9 @@ class RawXMLExporter(BaseExporter):
 
 class TextExporter(BaseExporter):
     """Export images with concatenated text content."""
+
+    def __init__(self, batch_size: int = 32):
+        super().__init__(batch_size)
 
     def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + full text pairs."""
@@ -188,7 +190,7 @@ class TextExporter(BaseExporter):
             dataset = dataset.map(
                 process_batch,
                 batched=True,
-                batch_size=32,
+                batch_size=self.batch_size,
                 features=post_features,
                 remove_columns=dataset.column_names,
             )
@@ -204,6 +206,9 @@ class TextExporter(BaseExporter):
 
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
+
+    def __init__(self, batch_size: int = 32):
+        super().__init__(batch_size)
 
     def process_dataset(
             self,
@@ -269,7 +274,7 @@ class RegionExporter(BaseExporter):
             dataset = dataset.map(
                 map_regions,
                 batched=True,
-                batch_size=32,
+                batch_size=self.batch_size,
                 features=post_features,
                 remove_columns=dataset.column_names
             )
@@ -282,6 +287,9 @@ class RegionExporter(BaseExporter):
 
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
+
+    def __init__(self, batch_size: int = 32):
+        super().__init__(batch_size)
 
     def process_dataset(
             self,
@@ -345,7 +353,7 @@ class LineExporter(BaseExporter):
             dataset = dataset.map(
                 map_lines,
                 batched=True,
-                batch_size=32,
+                batch_size=self.batch_size,
                 features=post_features,
                 remove_columns=dataset.column_names
             )
@@ -361,6 +369,7 @@ class WindowExporter(BaseExporter):
 
     def __init__(
             self,
+            batch_size: int = 32,
             window_size: int = 2,
             overlap: int = 0,
     ):
@@ -368,10 +377,11 @@ class WindowExporter(BaseExporter):
         Initialize the window exporter.
 
         Args:
+            batch_size (int, optional): For dataset mapping. Defaults to 32.
             window_size: Number of lines per window (1, 2, 3, etc.)
             overlap: Number of lines to overlap between windows
         """
-        super().__init__()
+        super().__init__(batch_size)
         self.window_size = window_size
         self.overlap = overlap
 
@@ -459,7 +469,7 @@ class WindowExporter(BaseExporter):
             dataset = dataset.map(
                 map_windows,
                 batched=True,
-                batch_size=32,
+                batch_size=self.batch_size,
                 features=post_features,
                 remove_columns=dataset.column_names
             )

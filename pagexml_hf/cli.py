@@ -163,8 +163,8 @@ def main():
     parser.add_argument(
         "--batchsize",
         type=int,
-        default=1000,
-        help="Number of files per batch (default: 1000).",
+        default=32,
+        help="Number of files per batch (default: 32, make it higher for line/window mode).",
     )
 
     parser.add_argument(
@@ -283,6 +283,7 @@ def main():
             export_mode=args.mode,
             window_size=args.window_size,
             overlap=args.overlap,
+            batch_size=args.batchsize,
             split_train=args.split_train,
             split_seed=args.split_seed,
             split_shuffle=args.split_shuffle,

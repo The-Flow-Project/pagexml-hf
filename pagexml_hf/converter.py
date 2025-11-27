@@ -159,6 +159,7 @@ class XmlConverter:
             export_mode: str = "text",
             window_size: int = 2,
             overlap: int = 0,
+            batch_size: int = 32,
             split_train: float | None = None,
             split_seed: int | None = 42,
             split_shuffle: bool | None = False,
@@ -174,6 +175,7 @@ class XmlConverter:
             export_mode: Export mode ('raw_xml', 'text', 'region', 'line', 'window')
             window_size: Number of lines per window (only for window mode)
             overlap: Number of lines to overlap between windows (only for window mode)
+            batch_size: Batch size for dataset mapping
             split_train: Split train set size (between 0 and 1, e.g. 0.8 for 80% train, 20% test)
             split_seed: Random seed for train/test split
             split_shuffle: Whether to shuffle the dataset before splitting
@@ -208,12 +210,13 @@ class XmlConverter:
                 f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})."
             )
             self.exporter = exporter_class(
+                batch_size=batch_size,
                 window_size=window_size,
                 overlap=overlap,
             )
         else:
             logger.info(f"Converting to {export_mode} format...")
-            self.exporter = exporter_class()
+            self.exporter = exporter_class(batch_size=batch_size)
 
         # Export dataset
         if export_mode in ("line", "region"):
