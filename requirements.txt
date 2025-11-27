@@ -55,6 +55,10 @@ idna==3.11
     #   httpx
     #   requests
     #   yarl
+imageio==2.37.2
+    # via scikit-image
+lazy-loader==0.4
+    # via scikit-image
 loguru==0.7.3
     # via pagexml-hf (pyproject.toml)
 lxml==6.0.2
@@ -65,22 +69,32 @@ multidict==6.7.0
     #   yarl
 multiprocess==0.70.16
     # via datasets
+networkx==3.5
+    # via scikit-image
 numpy==2.3.3
     # via
     #   pagexml-hf (pyproject.toml)
     #   datasets
-    #   opencv-python
+    #   imageio
     #   pandas
-opencv-python==4.11.0.86
-    # via pagexml-hf (pyproject.toml)
+    #   scikit-image
+    #   scipy
+    #   tifffile
 packaging==25.0
     # via
     #   datasets
     #   huggingface-hub
+    #   lazy-loader
+    #   scikit-image
 pandas==2.3.3
-    # via datasets
+    # via
+    #   pagexml-hf (pyproject.toml)
+    #   datasets
 pillow==11.3.0
-    # via pagexml-hf (pyproject.toml)
+    # via
+    #   pagexml-hf (pyproject.toml)
+    #   imageio
+    #   scikit-image
 propcache==0.4.1
     # via
     #   aiohttp
@@ -99,10 +113,16 @@ requests==2.32.5
     # via
     #   datasets
     #   huggingface-hub
+scikit-image==0.25.2
+    # via pagexml-hf (pyproject.toml)
+scipy==1.16.3
+    # via scikit-image
 six==1.17.0
     # via python-dateutil
 sniffio==1.3.1
     # via anyio
+tifffile==2025.10.16
+    # via scikit-image
 tqdm==4.67.1
     # via
     #   pagexml-hf (pyproject.toml)

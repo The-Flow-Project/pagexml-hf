@@ -23,8 +23,9 @@ dependencies = [
     "loguru>=0.7.3",
     "lxml>=4.6.0",
     "numpy>=1.21.0",
-    "opencv-python>=4.5.0",
+    "pandas>=2.0.3",
     "pillow>=9.0.0",
+    "scikit-image>=0.21.0",
     "tqdm>=4.62.0",
 ]
 readme = { file = "README.md", content-type = "text/markdown" }

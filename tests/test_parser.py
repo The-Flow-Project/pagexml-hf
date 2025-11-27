@@ -4,8 +4,8 @@ Basic tests for the transkribus-hf parser.
 
 import unittest
 import xml.etree.ElementTree as ET
-
-from pagexml_hf.parser import XmlParser, PageData
+from typing import Dict
+from pagexml_hf.parser import XmlParser
 
 
 class TestXmlParser(unittest.TestCase):
@@ -77,16 +77,16 @@ Test line 2</Unicode>
 
     def test_parse_page_xml(self):
         """Test complete page XML parsing."""
-        page_data = self.parser._parse_page_xml(self.sample_xml, "test_project")
+        page_data = self.parser._parse_page_xml(self.sample_xml)
 
-        self.assertIsInstance(page_data, PageData)
-        self.assertEqual(page_data.image_filename, "test.jpg")
-        self.assertEqual(page_data.image_width, 1247)
-        self.assertEqual(page_data.image_height, 1920)
-        self.assertEqual(page_data.project_name, "test_project")
-        self.assertEqual(len(page_data.regions), 1)
+        self.assertIsInstance(page_data, Dict)
+        self.assertEqual(page_data["image_filename"], "test.jpg")
+        self.assertEqual(page_data["image_width"], 1247)
+        self.assertEqual(page_data["image_height"], 1920)
+        self.assertEqual(page_data["project_name"], "test_project")
+        self.assertEqual(len(page_data["regions"]), 1)
 
-        region = page_data.regions[0]
+        region = page_data["regions"][0]
         self.assertEqual(region.id, "region_1")
         self.assertEqual(region.type, "paragraph")
         self.assertEqual(len(region.text_lines), 2)
