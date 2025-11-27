@@ -7,7 +7,6 @@ import os
 import sys
 import shutil
 from pathlib import Path
-import pandas as pd
 import traceback
 from datasets import get_dataset_config_names
 
@@ -245,34 +244,35 @@ def main():
 
     # Initialize parser
     xmlparser = XmlParser()
-    pages_df: pd.DataFrame | None = None
 
-    xml_parse: bool = False
+    parse_xml: bool = False
     if args.mode in ["line", "region", "text", "window"]:
-        xml_parse = True
+        parse_xml = True
 
-    # Get back a pages_df Pandas DataFrame
+    # Get back generator functions and kwargs depending on source type
     if source_type == 'local':
-        pages_df = xmlparser.parse_folder(source_path, xml_parse)
+        gen_func = xmlparser.parse_folder
+        gen_kwargs = {"folder_path": source_path, "parse_xml": parse_xml}
     elif source_type in ['zip', 'zip_url']:
-        pages_df = xmlparser.parse_zip(source_path, xml_parse)
+        gen_func = xmlparser.parse_zip
+        gen_kwargs = {'zip_path': source_path, 'parse_xml': parse_xml}
     elif source_type == 'huggingface':
-        pages_df = xmlparser.parse_dataset(source_path, token=args.token, parse_xml=xml_parse)
+        gen_func = xmlparser.parse_dataset
+        gen_kwargs = {'dataset': source_path, 'token': args.token, 'parse_xml': parse_xml}
     else:
         logger.error("Error: Unsupported source")
         sys.exit(1)
 
-    logger.debug("Got pages Dataframe:")
-    if pages_df is not None:
-        logger.debug(pages_df.info())
-    else:
-        logger.error("Error: No pages dataframe found")
+    logger.debug("Got generator function and kwargs:")
+    if (gen_func and gen_kwargs) is None:
+        logger.error("Error: No generator function and/or kwargs available")
         sys.exit(1)
 
     # Initialize converter
-    logger.info(f"Creating converter with pages dataframe")
+    logger.info(f"Creating converter")
     converter = XmlConverter(
-        pages=pages_df,
+        gen_func=gen_func,
+        gen_kwargs=gen_kwargs,
         source_path=source_path,
         source_type=source_type,
     )
@@ -299,17 +299,19 @@ def main():
             mode_suffix = f"_{args.mode}"
             if args.mode == "window":
                 mode_suffix += f"_w{args.window_size}_o{args.overlap}"
+
             output_dir = args.output_dir or f"./pagexml_dataset{mode_suffix}"
+            logger.info(f"Preparing to save dataset locally to: {output_dir}")
+
             if os.path.exists(output_dir):
+                logger.warning(f"Output directory {output_dir} exists. Overwriting...")
                 shutil.rmtree(output_dir)
 
-            logger.debug(f"Dataset type: {type(dataset)}")
+            # Dataset saved as arrow
+            logger.debug(f"Saving dataset to {output_dir} with save_to_disk()")
+            dataset.save_to_disk(output_dir)
 
-            # Iterable Dataset to parquet
-            logger.debug(f"Saving dataset to {output_dir} with to_parquet()")
-            output_path = f"{output_dir}/pagexml_dataset{mode_suffix}.parquet"
-            dataset.to_parquet(output_path)
-            logger.info(f"Dataset saved to: {output_dir}")
+            logger.info(f"Dataset saved sucessfully to: {output_dir}")
         else:
             # Upload to HuggingFace Hub
             repo_url = converter.upload_to_hub(
@@ -322,28 +324,28 @@ def main():
 
         # Show statistics if requested
         if args.get_stats:
-            stats = converter.get_stats()
+            stats = converter.stats_cache
             logger.debug(f"Stats: {stats}")
             print("Dataset Statistics:")
-            print(f"  Total pages_df: {stats['total_pages']}")
-            print(f"  Total regions: {stats['total_regions']}")
-            print(f"  Total lines: {stats['total_lines']}")
+            print(f"  Total pages_generator: {stats['total_pages']}")
             print(f"  Projects: {', '.join(stats['projects'])}")
-            print(f"  Avg regions per page: {stats['avg_regions_per_page']:.1f}")
-            print(f"  Avg lines per page: {stats['avg_lines_per_page']:.1f}")
+            if args.mode in ["line", "region", "text", "window"]:
+                print(f"  Total regions: {stats['total_regions']}")
+                print(f"  Total lines: {stats['total_lines']}")
+                print(f"  Avg regions per page: {stats['avg_regions_per_page']:.1f}")
+                print(f"  Avg lines per page: {stats['avg_lines_per_page']:.1f}")
 
             # For window mode, show expected window count
             if args.mode == "window":
                 step = args.window_size - args.overlap
                 estimated_windows = 0
-                for _ in stats["total_regions"]:  # This is a rough estimate
-                    regions_with_lines = stats["total_lines"] // 5  # rough estimate
-                    estimated_windows += (
-                            max(0, regions_with_lines - args.window_size + 1) // step
-                    )
+                regions_with_lines = stats["total_lines"] // 5
+                estimated_windows += (
+                        max(0, regions_with_lines - args.window_size + 1) // step
+                )
                 logger.info(
-                    f"  Estimated windows (window_size={args.window_size}, \
-                    overlap={args.overlap}): ~{estimated_windows}"
+                    f"  Estimated windows (window_size={args.window_size}, "
+                    f"overlap={args.overlap}): ~{estimated_windows}"
                 )
 
     except Exception as e:

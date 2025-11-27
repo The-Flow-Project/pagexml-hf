@@ -3,27 +3,24 @@ Exporters for converting parsed Transkribus data to different HuggingFace datase
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union, Dict, Any
 
 from PIL import ImageFile
-import pandas as pd
 from datasets import (
     Dataset,
-    IterableDataset,
     Features,
     Value,
     Image as DatasetImage,
-    List as DatasetList,
-    Sequence
+    List
 )
 
 from .logger import logger
-from .imageutils import ImageProcessor, calculate_bounding_box
+from .imageutils import ImageProcessor
 
 # Allow loading of truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-# Features used for dataframes with parsed xmls
+POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
+
 PRE_FEATURES = Features(
     {
         "image": DatasetImage(decode=False),
@@ -32,18 +29,21 @@ PRE_FEATURES = Features(
         "project_name": Value("string"),
         "image_width": Value("int64"),
         "image_height": Value("int64"),
-        "regions": DatasetList({
+
+        "regions": List(feature={
             "id": Value("string"),
             "type": Value("string"),
-            "coords": DatasetList(Sequence(Value("int64"))),
-            "text_lines": DatasetList({
+            "coords": POLYGON_FEATURE,
+
+            "text_lines": List(feature={
                 "id": Value("string"),
                 "text": Value("string"),
-                "coords": DatasetList(Sequence(Value("int64"))),
-                "baseline": DatasetList(Sequence(Value("int64"))),
+                "coords": POLYGON_FEATURE,
+                "baseline": POLYGON_FEATURE,
                 "reading_order": Value("int64"),
                 "region_id": Value("string"),
             }),
+
             "reading_order": Value("int64"),
             "full_text": Value("string"),
         }),
@@ -65,93 +65,19 @@ class BaseExporter(ABC):
         self.min_height: int = min_height
 
     @abstractmethod
-    def export(self, pages: pd.DataFrame) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    def process_dataset(self, dataset: Dataset) -> Dataset:
         """Export pages to a HuggingFace dataset."""
-
-    @staticmethod
-    def _flatten_cropped_region(batch):
-        logger.debug("Flatten cropped images.")
-        # batch["cropped_areas"] is a list‑of‑lists (len = batch_size)
-        flat_image, flat_text, flat_type, flat_id, flat_order, flat_fname, flat_proj = (
-            [], [], [], [], [], [], []
-        )
-
-        for i, regions in enumerate(batch["cropped_areas"]):
-            # keep the original page‑level metadata
-            fname = batch["filename"][i]
-            proj = batch["project_name"][i]
-
-            for reg in regions:
-                flat_image.append(reg["image"])
-                flat_text.append(reg["text"])
-                flat_type.append(reg["region_type"])
-                flat_id.append(reg["region_id"])
-                flat_order.append(reg["region_reading_order"])
-                flat_fname.append(fname)
-                flat_proj.append(proj)
-
-        return {
-            "image": flat_image,
-            "text": flat_text,
-            "region_id": flat_id,
-            "region_reading_order": flat_order,
-            "region_type": flat_type,
-            "filename": flat_fname,
-            "project_name": flat_proj,
-        }
-
-    @staticmethod
-    def _flatten_cropped_line(batch):
-        logger.debug("Flatten cropped line images.")
-        # batch["cropped_areas"] is a list‑of‑lists (len = batch_size)
-        flat_image, flat_text, flat_id, flat_order, flat_rid, flat_rorder, flat_rtype, flat_fname, flat_proj = (
-            [], [], [], [], [], [], [], [], []
-        )
-
-        for i, regions in enumerate(batch["cropped_areas"]):
-            # keep the original page‑level metadata
-            fname = batch["filename"][i]
-            proj = batch["project_name"][i]
-
-            for reg in regions:
-                flat_image.append(reg["image"])
-                flat_text.append(reg["text"])
-                flat_id.append(reg["line_id"])
-                flat_order.append(reg["line_reading_order"])
-                flat_rid.append(reg["region_id"])
-                flat_rorder.append(reg["region_reading_order"])
-                flat_rtype.append(reg["region_type"])
-                flat_fname.append(fname)
-                flat_proj.append(proj)
-
-        return {
-            "image": flat_image,
-            "text": flat_text,
-            "line_id": flat_id,
-            "line_reading_order": flat_order,
-            "region_id": flat_rid,
-            "region_reading_order": flat_rorder,
-            "region_type": flat_rtype,
-            "filename": flat_fname,
-            "project_name": flat_proj,
-        }
 
 
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
 
-    def export(self, pages: pd.DataFrame) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + raw XML pairs."""
-        logger.info(f"Exporting raw XML content with images... (number of pages: {pages.shape[0]})")
+        logger.info(f"Exporting raw XML content with images... (number of pages: {len(dataset)})")
+
         image_processor = ImageProcessor()
+
         features = Features(
             {
                 "image": DatasetImage(decode=False),
@@ -160,69 +86,93 @@ class RawXMLExporter(BaseExporter):
                 "project_name": Value("string"),
             }
         )
-        logger.debug(f"Get dataset from Pandas DataFrame")
-        dataset = Dataset.from_pandas(pages, preserve_index=False, features=features)
 
-        logger.debug(f"Dataset from pandas generated")
-        dataset = dataset.flatten_indices()
-        dataset = dataset.to_iterable_dataset(num_shards=5)
+        def map_raw(batch):
+            """
+            Map the raw XMLs for image correction
+            """
+            out_images = []
+            for img_entry in batch["image"]:
+                image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                final_bytes = image_processor.encode_image(image)
+                out_images.append({"bytes": final_bytes, "path": None})
+
+            return {
+                "image": out_images,
+                "xml_content": batch["xml_content"],
+                "filename": batch["filename"],
+                "project_name": batch["project_name"],
+            }
+
         logger.debug(f"Start mapping for orientation correction")
-        dataset = dataset.map(
-            image_processor.correct_orientation,
-            batched=True,
-            batch_size=32,
-            features=features
-        )
+        try:
+            dataset = dataset.map(
+                map_raw,
+                batched=True,
+                batch_size=32,
+                features=features,
+                remove_columns=dataset.column_names,
+            )
 
-        logger.debug(dataset.info)
-        logger.debug(dataset.features)
+            logger.debug(dataset.info)
+            logger.debug(dataset.features)
 
-        logger.info(f"Iterable dataset prepared")
+            logger.info(f"Raw XML dataset prepared")
+        except Exception as e:
+            logger.error(f"Error preparing raw XML dataset: {e}")
+            dataset = None
         return dataset
 
 
 class TextExporter(BaseExporter):
     """Export images with concatenated text content."""
 
-    def export(self, pages: pd.DataFrame) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + full text pairs."""
 
-        logger.info(f"Exporting text content with images... (Processed: {pages.shape[0]})")
-        image_processor = ImageProcessor()
+        logger.info(f"Exporting text content with images... (Parsed {len(dataset)} pages)")
 
-        def map_examples(batch):
+        def process_batch(batch):
             """
             Generator for dataset creation.
             """
+            image_processor = ImageProcessor()
+
+            output_images = []
+            output_texts = []
+
             logger.debug(f"Start mapping to add full_text")
-            results = []
-            for i, regions in enumerate(batch["regions"]):
-                if regions is not None:
-                    # Concatenate all text from regions in reading order
-                    logger.debug(f"Processing region {i + 1} of {len(batch)}")
-                    full_text = '\n'.join(
-                        r.get("full_text", "") for r in regions
-                    )
-                    if not full_text:
-                        full_text = ""
-                    output_dict = {
-                        "image": batch["image"][i],
-                        "text": full_text,
-                        "filename": batch["filename"][i],
-                        "project_name": batch["project_name"][i],
-                    }
-                    logger.debug(f"Finished mapping to full text: {full_text}")
-                    results.append(output_dict)
+
+            for i in range(len(batch["image"])):
+                # ------ Text Extraction ------
+                regions_list = batch["regions"][i]
+
+                if regions_list and len(regions_list) > 0:
+                    page_text_parts = []
+                    for r in regions_list:
+                        txt = r.get("full_text")
+                        if txt:
+                            page_text_parts.append(txt)
+
+                    full_text = '\n'.join(page_text_parts)
+                else:
+                    full_text = ""
+
+                output_texts.append(full_text)
+
+                # ------- Handle Image Orientation ------
+                img_entry = batch["image"][i]
+                original_bytes = img_entry["bytes"]
+                final_bytes = image_processor.load_and_fix_orientation(original_bytes)
+                final_bytes = image_processor.encode_image(final_bytes)
+
+                output_images.append({"bytes": final_bytes, "path": None})
 
             return {
-                "image": [r["image"] for r in results],
-                "text": [r["text"] for r in results],
-                "filename": [r["filename"] for r in results],
-                "project_name": [r["project_name"] for r in results],
+                "image": output_images,
+                "text": output_texts,
+                "filename": batch["filename"],
+                "project_name": batch["project_name"],
             }
 
         post_features = Features(
@@ -234,97 +184,95 @@ class TextExporter(BaseExporter):
             }
         )
         try:
-            logger.debug(f"Get dataset from Pandas DataFrame")
-            dataset = Dataset.from_pandas(
-                pages, preserve_index=False, features=PRE_FEATURES  # default: cache_dir=None
-            )
-            logger.debug(f"Dataset from pandas generated")
-            dataset = dataset.flatten_indices()
-            dataset = dataset.to_iterable_dataset(num_shards=5)
+            logger.debug(f"Map the provided dataset.")
             dataset = dataset.map(
-                image_processor.correct_orientation,
-                batched=True,
-                batch_size=32,
-                features=PRE_FEATURES
-            )
-            dataset = dataset.map(
-                map_examples,
+                process_batch,
                 batched=True,
                 batch_size=32,
                 features=post_features,
-                remove_columns=["xml_content", "image_width", "image_height", "regions"],
+                remove_columns=dataset.column_names,
             )
+            logger.debug(dataset.info)
+            logger.debug(dataset.features)
+            logger.info(f"Text Dataset prepared")
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
             dataset = None
 
-        logger.debug(dataset.info)
-        logger.debug(dataset.features)
-        logger.info(f"Iterable Dataset prepared")
         return dataset
 
 
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
 
-    def export(
+    def process_dataset(
             self,
-            pages: pd.DataFrame,
+            dataset: Dataset,
             mask: bool = False,
-            min_width: Optional[int] = None,
-            min_height: Optional[int] = None,
+            min_width: int = 0,
+            min_height: int = 0,
             allow_empty: bool = False,
-    ) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    ) -> Dataset | None:
         """Export each region as a separate dataset entry."""
 
-        logger.info(f"Exporting Region XML content with images... (Processed: {len(pages)})")
+        logger.info(f"Exporting Region XML content with images... (Processed: {len(dataset)})")
+
         image_processor = ImageProcessor(
             mask_crop=mask,
             min_width=min_width,
             min_height=min_height,
-            allow_empty=allow_empty
         )
 
         post_features = Features({
             "image": DatasetImage(decode=False),
             "text": Value("string"),
             "region_id": Value("string"),
-            "region_reading_order": Value("int64"),
+            "region_reading_order": Value("int32"),
             "region_type": Value("string"),
             "filename": Value("string"),
             "project_name": Value("string"),
         })
 
+        def map_regions(batch):
+            """
+            Mapping the regions
+            """
+            logger.info(f"Start mapping to regions...")
+            out = {k: [] for k in post_features.keys()}
+
+            for i, img_entry in enumerate(batch["image"]):
+                pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+
+                regions_list = batch["regions"][i]
+                if not regions_list:
+                    continue
+
+                for r in regions_list:
+                    if not allow_empty and not r.get("full_text"):
+                        continue
+
+                    crop_bytes = image_processor.crop_from_image(pil_image, r["coords"])
+
+                    if crop_bytes:
+                        out["image"].append({"bytes": crop_bytes, "path": None})
+                        out["text"].append(r.get("full_text", ""))
+                        out["region_id"].append(r["id"])
+                        out["region_reading_order"].append(r["reading_order"])
+                        out["region_type"].append(r["type"])
+                        out["filename"].append(batch["filename"][i])
+                        out["project_name"].append(batch["project_name"][i])
+
+            return out
+
         try:
-            dataset = Dataset.from_pandas(pages, preserve_index=False, features=PRE_FEATURES)
-            dataset = dataset.flatten_indices()
-            dataset = dataset.to_iterable_dataset()
+            logger.debug(f"Map the provided dataset.")
             dataset = dataset.map(
-                image_processor.correct_orientation,
-                batched=True,
-                batch_size=32,
-                features=PRE_FEATURES
-            )
-            dataset = dataset.map(
-                image_processor.process_entry_cropping,
-                batched=True,
-                batch_size=32,
-                features=PRE_FEATURES,
-            )
-            dataset = dataset.map(
-                self._flatten_cropped_region,
+                map_regions,
                 batched=True,
                 batch_size=32,
                 features=post_features,
-                remove_columns=["cropped_areas", "xml_content", "image_width", "image_height", "regions"],
+                remove_columns=dataset.column_names
             )
-        except ValueError as e:
-            logger.error(f"ValueError creating dataset: {e}")
-            dataset = None
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
             dataset = None
@@ -335,27 +283,21 @@ class RegionExporter(BaseExporter):
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
 
-    def export(
+    def process_dataset(
             self,
-            pages: pd.DataFrame,
+            dataset: Dataset,
             mask: bool = False,
-            min_width: Optional[int] = None,
-            min_height: Optional[int] = None,
+            min_width: int = 0,
+            min_height: int = 0,
             allow_empty: bool = False,
-    ) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    ) -> Dataset | None:
         """Export each text line as a separate dataset entry."""
-        logger.info(f"Exporting line content with images... (Processed: {len(pages)})")
+        logger.info(f"Exporting line content with images... (Processed: {len(dataset)})")
 
         image_processor = ImageProcessor(
             mask_crop=mask,
             min_width=min_width,
             min_height=min_height,
-            allow_empty=allow_empty,
-            line_based=True,
         )
 
         post_features = Features({
@@ -370,32 +312,43 @@ class LineExporter(BaseExporter):
             "project_name": Value("string"),
         })
 
+        def map_lines(batch):
+            """
+            Mapping the lines and cropping them
+            """
+            out = {k: [] for k in post_features.keys()}
+
+            for i, img_entry in enumerate(batch["image"]):
+                pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+
+                regions_list = batch["regions"][i]
+                for r in regions_list:
+                    lines = r.get("text_lines", [])
+                    for line in lines:
+                        if allow_empty and not line.get("text"): continue
+
+                        crop_bytes = image_processor.crop_from_image(pil_image, line["coords"])
+
+                        if crop_bytes:
+                            out["image"].append({"bytes": crop_bytes, "path": None})
+                            out["text"].append(line.get("text", ""))
+                            out["line_id"].append(line["id"])
+                            out["line_reading_order"].append(line["reading_order"])
+                            out["region_id"].append(line["region_id"])
+                            out["region_reading_order"].append(r["reading_order"])
+                            out["region_type"].append(r["type"])
+                            out["filename"].append(batch["filename"][i])
+                            out["project_name"].append(batch["project_name"][i])
+            return out
+
         try:
-            dataset = Dataset.from_pandas(pages, preserve_index=False, features=PRE_FEATURES)
-            dataset = dataset.flatten_indices()
-            dataset = dataset.to_iterable_dataset()
             dataset = dataset.map(
-                image_processor.correct_orientation,
-                batched=True,
-                batch_size=32,
-                features=PRE_FEATURES
-            )
-            dataset = dataset.map(
-                image_processor.process_entry_cropping,
-                batched=True,
-                batch_size=32,
-                features=PRE_FEATURES,
-            )
-            dataset = dataset.map(
-                self._flatten_cropped_line,
+                map_lines,
                 batched=True,
                 batch_size=32,
                 features=post_features,
-                remove_columns=["cropped_areas", "xml_content", "image_width", "image_height", "regions"],
+                remove_columns=dataset.column_names
             )
-        except ValueError as e:
-            logger.error(f"ValueError creating dataset: {e}")
-            dataset = None
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
             dataset = None
@@ -425,108 +378,93 @@ class WindowExporter(BaseExporter):
         if overlap >= window_size:
             raise ValueError("Overlap must be less than window size")
 
-    def export(self, pages: pd.DataFrame, mask: bool = False, allow_empty: bool = False) -> Union[
-        Dataset,
-        IterableDataset,
-        None
-    ]:
+    def process_dataset(
+            self,
+            dataset: Dataset,
+            mask: bool = False,
+            allow_empty: bool = False
+    ) -> Dataset | None:
         """Export sliding windows of lines as separate dataset entries."""
-        logger.info(f"Exporting window content with images... (Processed: {len(pages)})")
+        logger.info(f"Exporting window content with images (processed: {len(dataset)}).")
 
-        image_processor = ImageProcessor(mask_crop=mask, allow_empty=allow_empty)
+        image_processor = ImageProcessor(mask_crop=mask)
 
-        def map_examples(batch):
-            """
-            Function for dataset mapping.
-            """
-            result = []
-            for region in batch["regions"]:
-                # Generate sliding windows for this region
-                windows = self._create_windows(region["text_lines"])
-                for window_idx, window_lines in enumerate(windows):
-                    # Calculate bounding box for all lines in this window
-                    line_coords = [
-                        line["coords"] for line in window_lines if line["coords"] is not None
-                    ]
-                    if line_coords is not None:
-                        window_coords = calculate_bounding_box(line_coords)
-                        window_image = image_processor.crop_with_coords(
-                            batch["image"], window_coords
-                        )
-                        if window_image is not None:
-                            # Combine text from all lines in window
-                            window_text = "\n".join(
-                                [
-                                    line["text"]
-                                    for line in window_lines
-                                    if line["text"] or allow_empty
-                                ]
-                            )
-                            # Create line info for metadata
-                            line_ids = [line["id"] for line in window_lines]
-                            line_orders = [
-                                line["reading_order"] for line in window_lines
-                            ]
-                            result.append({
-                                "image": window_image,
-                                "text": window_text,
-                                "window_size": len(window_lines),
-                                "window_index": window_idx,
-                                "line_ids": ", ".join(line_ids),
-                                "line_reading_orders": ", ".join(
-                                    map(str, line_orders)
-                                ),
-                                "region_id": region["id"],
-                                "region_reading_order": region["reading_order"],
-                                "region_type": region["type"],
-                                "filename": batch["filename"],
-                                "project_name": batch["project_name"],
-                            })
-            return result
-
-        # Create dataset using generator to avoid memory issues
-        features = Features(
+        post_features = Features(
             {
-                "image": Value("bytes"),
-                "xml_content": Value("string"),
+                "image": DatasetImage(decode=False),
+                "text": Value("string"),
+                "window_size": Value("int64"),
+                "window_index": Value("int64"),
+                "line_ids": Value("string"),
+                "line_reading_order": Value("string"),
                 "filename": Value("string"),
                 "project_name": Value("string"),
-                "image_width": Value("int32"),
-                "image_height": Value("int32"),
-                "regions": DatasetList(Dict[str, Any]),
             }
         )
 
+        def map_windows(batch):
+            """
+            Function for dataset mapping.
+            """
+            out = {k: [] for k in post_features.keys()}
+
+            for i, img_entry in enumerate(batch["image"]):
+                pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+
+                regions_list = batch["regions"][i] or []
+                all_lines_in_page = []
+
+                for r in regions_list:
+                    all_lines_in_page.extend(r.get("text_lines", []))
+
+                logger.debug(f"Length of all lines: {len(all_lines_in_page)}")
+                step = self.window_size - self.overlap
+                if step < 1:
+                    step = 1
+
+                idx = 0
+
+                for j in range(0, len(all_lines_in_page), step):
+                    window_lines = all_lines_in_page[j: j + self.window_size]
+                    logger.debug(f"Length of window lines: {len(window_lines)} (j: {j}, idx: {idx})")
+                    if not window_lines:
+                        continue
+
+                    window_text = "\n".join([l["text"] for l in window_lines])
+                    window_ids = ", ".join([l["id"] for l in window_lines])
+
+                    all_coords = []
+                    for l in window_lines:
+                        all_coords.extend(l["coords"])
+
+                    if not all_coords:
+                        continue
+                    logger.debug(f"Length of all coords: {len(all_coords)}")
+                    crop_bytes = image_processor.crop_from_image(pil_image, all_coords)
+                    if crop_bytes:
+                        out["image"].append({"bytes": crop_bytes, "path": None})
+                        out["text"].append(window_text)
+                        out["window_size"].append(len(window_lines))
+                        out["window_index"].append(idx)
+                        out["line_ids"].append(window_ids)
+                        out["line_reading_order"].append(", ".join([str(l["reading_order"]) for l in window_lines]))
+                        out["filename"].append(str(batch["filename"][i]))
+                        out["project_name"].append(str(batch["project_name"][i]))
+
+                    idx += len(window_lines)
+                    logger.debug("Next step.")
+            return out
+
         try:
-            logger.debug(pages.head())
-            dataset = Dataset.from_pandas(pages, features=features, preserve_index=False)
-            dataset = dataset.to_iterable_dataset()
-            dataset = dataset.map(map_examples)
-            dataset = dataset.cast_column("image", DatasetImage(decode=True))
+            dataset = dataset.map(
+                map_windows,
+                batched=True,
+                batch_size=32,
+                features=post_features,
+                remove_columns=dataset.column_names
+            )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
             dataset = None
 
         return dataset
-
-    def _create_windows(self, lines: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
-        """Create sliding windows of lines with specified size and overlap."""
-        if not lines:
-            return []
-
-        windows = []
-        step = self.window_size - self.overlap
-
-        for i in range(0, len(lines), step):
-            window = lines[i: i + self.window_size]
-            if (
-                    len(window) > 0
-            ):  # Always include windows, even if smaller than window_size
-                windows.append(window)
-
-            # Stop if we've reached the end and the last window would be too small
-            # (unless we want to include partial windows)
-            if i + self.window_size >= len(lines):
-                break
-
-        return windows

@@ -13,11 +13,8 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 import chardet
 import datasets
 import lxml.etree as et
-import pandas as pd
 import requests
 from datasets import load_dataset
-from tqdm import tqdm
-from PIL import Image
 
 from .logger import logger
 
@@ -56,16 +53,16 @@ class XmlParser:
     def __init__(self):
         logger.info(f"Initializing XmlParser")
 
-    def parse_zip(self, zip_path: str, parse_xml: bool = False) -> pd.DataFrame | None:
+    def parse_zip(self, zip_path: str, parse_xml: bool = False):
         """
-        Parse a Transkribus ZIP file and extract all page data.
+        Generator to parse a Transkribus ZIP file and extract all page data.
 
         Args:
             zip_path: Path or URL to the ZIP file
             parse_xml: Whether or not to parse the XML file and to get regions and lines (depends on mode)
 
         Returns:
-            List of PageData objects
+            Generator of page data
         """
 
         if zip_path.startswith("http://") or zip_path.startswith("https://"):
@@ -102,12 +99,12 @@ class XmlParser:
                    and not self._is_metadata_file(f)
             ]
             logger.debug(f"Found {len(file_list)} files, {len(image_files)} images")
-            # Create empty pd.DataFrame
-            xml_dataframe = self._create_dataframe(parse_xml)
 
-            for xml_filename in tqdm(file_list, total=len(file_list), desc="Parsing XML files"):
+            for xml_filename in file_list:
                 row = {}
                 logger.debug(f"Processing file: {str(xml_filename)}")
+
+                # Read the XML content and extract the project name
                 xml_content = self._read_xml_with_encoding(zip_file, str(xml_filename))
                 if not xml_content:
                     logger.warning(f"Skipping file: {str(xml_filename)}")
@@ -116,52 +113,63 @@ class XmlParser:
                 row["xml_content"] = xml_content
                 parent = xml_filename.parent
                 row["project_name"] = parent.name if parent.name != "page" else parent.parent.name
+
+                # Find the matching image in the file list
                 imagepath = next((i for i in image_files if i.stem in str(xml_filename)), None)
                 row["image"] = None
+
                 try:
-                    logger.debug(f"parsing image: {str(xml_filename)}")
+                    logger.debug(f"Parsing image: {str(xml_filename)}")
                     page_data = self._parse_page_xml(xml_content)
+
                     if parse_xml:
                         row["regions"] = page_data["regions"]
                         row["image_width"] = page_data["image_width"]
                         row["image_height"] = page_data["image_height"]
-                    if imagepath is None:
-                        row["image"] = {"bytes": self._get_image_from_url(page_data["image_url"]), "path": None}
+
+                    # First strategy: Get image from URL in XML
+                    if imagepath is None and "image_url" in page_data:
+                        img_bytes = self._get_image_from_url(page_data["image_url"])
+                        row["image"] = {"bytes": img_bytes, "path": None}
+                        row["filename"] = page_data["image_filename"]
+                    else:
+                        row["filename"] = imagepath.name
+
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
                     continue
+
+                # Second strategy: Get image from ZIP
                 if row["image"] is None and imagepath:
                     logger.debug(f"image is None and imagepath: {imagepath}")
                     try:
-                        row["image"] = {"bytes": zip_file.read(str(imagepath)), "path": None}
+                        img_bytes = zip_file.read(str(imagepath))
+                        row["image"] = {"bytes": img_bytes, "path": None}
                         row["filename"] = imagepath.name
                     except Exception as e:
                         logger.error(f"Failed to attach image: {e}")
                         continue
+
                 if row["image"] is None:
                     logger.debug(f"image is None")
                     logger.error(f"Failed to attach image: {e}")
                     continue
 
-                xml_dataframe.loc[len(xml_dataframe)] = row
+                logger.debug(f"Got row: {list(row.keys())}")
 
-            if xml_dataframe.empty:
-                return None
-            else:
-                return xml_dataframe
+                yield row
 
-    def parse_folder(self, folder_path: str, parse_xml: bool = False) -> pd.DataFrame | None:
+    def parse_folder(self, folder_path: str, parse_xml: bool = False):
         """
-        Parse PAGE XML files from a folder path mimicking Transkribus structure.
+        Generator to parse PAGE XML files from a folder path mimicking Transkribus structure.
 
         Args:
             folder_path: Path to the folder
             parse_xml: Whether or not to parse the XML file and to get regions and lines (depends on mode)
 
         Returns:
-            List of PageData objects
+            Generator to create of page data dataset
         """
-        xml_dataframe = self._create_dataframe(parse_xml)
 
         folder = Path(folder_path)
         filelist = [
@@ -173,22 +181,26 @@ class XmlParser:
         xml_files = [f for f in filelist if f.suffix.lower() == ".xml"]
         image_files = [i for i in filelist if i.suffix.lower() in [".jpg", ".jpeg", ".png", ".tif", ".tiff"]]
 
-        logger.info(f"Found {len(xml_files)} XML files")
-        logger.info(f"Found {len(image_files)} images")
+        logger.info(f"Found {len(xml_files)} XML files and {len(image_files)} images in {folder_path}")
 
-        for xml_filename in tqdm(xml_files, total=len(xml_files), desc="Parsing XML files"):
+        for xml_filename in xml_files:
             row = {}
             logger.debug(f"Processing file: {str(xml_filename)}")
+
+            # Extract xml content
             xml_content = self._file_loader(str(xml_filename))
             if not xml_content:
                 logger.debug(f"Skipping file: {str(xml_filename)}")
                 continue
-
             row["xml_content"] = xml_content
+
+            # Extract project name
             parent = xml_filename.parent
             row["project_name"] = parent.name if parent.name != "page" else parent.parent.name
+
             imagepath = next((i.absolute() for i in image_files if i.stem in str(xml_filename)), None)
             row["image"] = None
+
             if parse_xml or imagepath is None:
                 try:
                     page_data = self._parse_page_xml(xml_content)
@@ -198,9 +210,13 @@ class XmlParser:
                         row["image_height"] = page_data["image_height"]
                     if imagepath is None:
                         row["image"] = self._get_image_from_url(page_data["image_url"])
+                        row["filename"] = page_data["image_filename"]
+                    else:
+                        row["filename"] = imagepath.name
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
                     continue
+
             if row["image"] is None and imagepath:
                 try:
                     with open(imagepath, "rb") as f:
@@ -213,19 +229,14 @@ class XmlParser:
                 logger.error(f"Failed to attach image from xml file: {str(xml_filename)}")
                 continue
 
-            xml_dataframe.loc[len(xml_dataframe)] = row
-
-        if xml_dataframe.empty:
-            return None
-        else:
-            return xml_dataframe
+            yield row
 
     def parse_dataset(
             self,
             dataset: Union[str, datasets.Dataset],
             token: str | None = None,
             parse_xml: bool = False,
-    ) -> pd.DataFrame | None:
+    ):
         """
         Parse a HuggingFace dataset containing PAGE XML files.
         It only fetches the 'train' split!
@@ -236,61 +247,62 @@ class XmlParser:
             parse_xml: Whether or not to parse the XML file (depends on mode)
 
         Returns:
-            List of PageData objects
+            Generator to create of page data dataset
         """
 
-        xml_dataframe = self._create_dataframe(parse_xml)
         logger.info(f"Loading dataset {dataset}...")
         if isinstance(dataset, str):
             try:
-                ds = load_dataset(dataset, split="train", token=token)
+                ds = load_dataset(dataset, split="train", token=token, streaming=True)
             except Exception as e:
                 raise ValueError(
                     f"Failed to load dataset {dataset}: {e} \
                         (did you set a token for private datasets?)"
                 ) from e
         elif isinstance(dataset, datasets.Dataset):
+            ds = dataset.to_iterable_dataset()
+        elif isinstance(dataset, datasets.IterableDataset):
             ds = dataset
         else:
-            raise ValueError("dataset must be a string or a datasets.Dataset object")
-
-        column_names = ds.column_names if isinstance(ds.column_names, list) else []
-        if not set(column_names).issuperset(['image', 'xml']):
-            raise ValueError(f"Dataset {dataset} must contain 'xml' and 'image' columns")
+            raise ValueError("dataset must be a string, Dataset, or IterableDataset")
 
         logger.debug(f"Dataset loaded:\n{ds}")
 
-        try:
-            if type(ds.features["image"]) == datasets.features.image.Image:
-                if ds.features["image"].decode:
-                    ds = ds.cast_column("image", datasets.Image(decode=False))
-                else:
-                    pass
-        except Exception as e:
-            raise ValueError(
-                f"Dataset {dataset} must contain 'image' with Image features: {e}"
-            )
-
-        dataset_iterable = ds.to_iterable_dataset()
-        for item in dataset_iterable:
+        for item in ds:
             row = {}
-            xml_content = item.get("xml")
+
+            xml_content = item.get("xml") or item.get("xml_content")
             if xml_content is None:
                 logger.warning("Skipping item without XML content")
                 continue
 
             row["xml_content"] = xml_content
             row["project_name"] = item.get("project_name", "unknown_project")
-            row["image"] = None
 
             page_data = self._parse_page_xml(xml_content)
+
             if page_data:
                 try:
-                    image = item.get("image")["bytes"]
-                    if image is not None:
-                        row["image"] = image
+                    src_image = item.get("image")
+
+                    if isinstance(src_image, dict) and "bytes" in src_image:
+                        img_bytes = src_image["bytes"]
+
+                    elif hasattr(src_image, "save"):
+                        with io.BytesIO as buf:
+                            src_image.save(buf, format="JPEG")
+                            img_bytes = buf.getvalue()
+
+                    elif isinstance(src_image, bytes):
+                        img_bytes = src_image
+                    else:
+                        logger.warning("Skipping item with invalid image content")
+                        continue
+
+                    row["image"] = {"bytes": img_bytes, "path": None}
+
                 except Exception as e:
-                    logger.error(f"Failed to parse image: {e}")
+                    logger.error(f"Failed to process image bytes: {e}")
                     continue
 
                 row["filename"] = page_data["image_filename"]
@@ -303,12 +315,7 @@ class XmlParser:
                 logger.warning("Skipping item with invalid XML content")
                 continue
 
-            xml_dataframe.loc[len(xml_dataframe)] = row
-
-        if xml_dataframe.empty:
-            return None
-        else:
-            return xml_dataframe
+            yield row
 
     def _file_loader(self, file_path: str) -> str | None:
         """
@@ -450,7 +457,7 @@ class XmlParser:
             region_type = region_elem.get("type", "paragraph")
 
             # Parse coordinates
-            coords: List[Tuple[int, int]] = self._parse_coords(region_elem.find("pc:Coords", self.namespace))
+            coords: List[List[int]] = self._parse_coords(region_elem.find("pc:Coords", self.namespace))
 
             # Parse text lines
             text_lines: List[Dict[str, Any]] = self._parse_text_lines(region_elem, region_id)
@@ -492,7 +499,7 @@ class XmlParser:
             # Parse baseline
             baseline_elem = line_elem.find("pc:Baseline", self.namespace)
             baseline = (
-                self._parse_coords(baseline_elem) if baseline_elem is not None else None
+                self._parse_coords(baseline_elem) if baseline_elem is not None else []
             )
 
             # Get text content
@@ -545,7 +552,7 @@ class XmlParser:
         return None
 
     @staticmethod
-    def _parse_coords(coords_elem: et.Element | None) -> List[Tuple[int, int]]:
+    def _parse_coords(coords_elem: et.Element | None) -> List[List[int]]:
         """Parse coordinates from a Coords element."""
         if coords_elem is None:
             return []
@@ -558,7 +565,7 @@ class XmlParser:
         for point in points_str.split():
             if "," in point:
                 x, y = point.split(",")
-                coords.append((int(x), int(y)))
+                coords.append([int(x), int(y)])
 
         return coords
 
@@ -587,29 +594,3 @@ class XmlParser:
             if match:
                 return int(match.group(1))
         return 0
-
-    @staticmethod
-    def _create_dataframe(parse_xml: bool = False) -> pd.DataFrame:
-        dtypes = {"xml_content": str, "project_name": str, "filename": str, "image": object}
-        dataframe = pd.DataFrame(
-            columns=["xml_content", "project_name", "filename", "image"],
-        )
-        dataframe.astype(dtypes)
-
-        if parse_xml:
-            dtypes_extended = {
-                "image_width": int,
-                "image_height": int,
-                "regions": object,
-            }
-            dataframe_extended = pd.DataFrame(
-                columns=["image_width", "image_height", "regions"],
-            )
-            dataframe_extended.astype(dtypes_extended)
-            dataframe = pd.concat(
-                [dataframe, dataframe_extended],
-                axis=1,
-            )
-            logger.debug(dataframe.info())
-            logger.debug(dataframe.head())
-        return dataframe
