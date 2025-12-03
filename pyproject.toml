@@ -13,9 +13,10 @@ description = """
     Convert Transkribus ZIP files or a PageXML export folder (with images) to HuggingFace datasets
  """
 authors = [
+    { name = "Dana Rebecca Meyer", email = "dameyer@techfak.uni-bielefeld.de" },
     { name = "Jonas Widmer", email = "jonas.widmer@unibe.ch" }
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "chardet>=4.0.0",
     "datasets>=2.0.0",
@@ -45,8 +46,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering",
