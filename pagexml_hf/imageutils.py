@@ -71,7 +71,7 @@ class ImageProcessor:
         Returns JPEG bytes.
         """
         try:
-            img_ndarray = np.array(image)
+            img_ndarray = np.array(image, dtype=np.uint8)
 
             x_coords = [pt[0] for pt in coords]
             y_coords = [pt[1] for pt in coords]
@@ -89,11 +89,12 @@ class ImageProcessor:
 
             if self.mask_crop:
                 shifted_coords = [(x - min_x, y - min_y) for (x, y) in coords]
-                mask_img = np.zeros((img_cropped.shape[0], img_cropped.shape[1]), dtype=np.uint8)
-                pts = np.array([shifted_coords], dtype=np.int32)
-                rr, cc = draw.polygon(pts, mask_img.shape)
+                mask_img = np.zeros((img_cropped.shape[0], img_cropped.shape[1]))
+                y_coords_shifted = [y for (x, y) in shifted_coords]
+                x_coords_shifted = [x for (x, y) in shifted_coords]
+                rr, cc = draw.polygon(y_coords_shifted, x_coords_shifted, shape=mask_img.shape)
                 mask_img[rr, cc] = 255
-                img_cropped = np.where(mask_img[:, :, None] == 255, img_cropped, 0)
+                img_cropped = np.where(mask_img[:, :, None] == 255, img_cropped, 255)
 
             return self.encode_image(Image.fromarray(img_cropped))
         except Exception as e:

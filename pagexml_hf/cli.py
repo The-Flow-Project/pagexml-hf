@@ -168,6 +168,14 @@ def main():
     )
 
     parser.add_argument(
+        "--append",
+        action="store_true",
+        default=False,
+        help="Append to existing HuggingFace Hub dataset (only for uploads, not --local-only). "
+             "If True, checks feature compatibility before processing. (default: False)",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         default=False,
@@ -263,7 +271,7 @@ def main():
         logger.error("Error: Unsupported source")
         sys.exit(1)
 
-    logger.debug("Got generator function and kwargs:")
+    logger.debug("Got generator function and kwargs")
     if (gen_func and gen_kwargs) is None:
         logger.error("Error: No generator function and/or kwargs available")
         sys.exit(1)
@@ -278,24 +286,23 @@ def main():
     )
 
     try:
-        # Convert the dataset
-        dataset = converter.convert(
-            export_mode=args.mode,
-            window_size=args.window_size,
-            overlap=args.overlap,
-            batch_size=args.batchsize,
-            split_train=args.split_train,
-            split_seed=args.split_seed,
-            split_shuffle=args.split_shuffle,
-            mask_crop=args.mask_crop,
-            min_width=args.min_width,
-            min_height=args.min_height,
-            allow_empty=args.allow_empty,
-        )
-
-        logger.debug(f"Converted dataset: {dataset.info}")
-
         if args.local_only:
+            # Convert the dataset
+            dataset = converter.convert(
+                export_mode=args.mode,
+                window_size=args.window_size,
+                overlap=args.overlap,
+                batch_size=args.batchsize,
+                split_train=args.split_train,
+                split_seed=args.split_seed,
+                split_shuffle=args.split_shuffle,
+                mask_crop=args.mask_crop,
+                min_width=args.min_width,
+                min_height=args.min_height,
+                allow_empty=args.allow_empty,
+            )
+            logger.debug(f"Converted dataset: {dataset.info}")
+
             # Save locally
             mode_suffix = f"_{args.mode}"
             if args.mode == "window":
@@ -315,11 +322,22 @@ def main():
             logger.info(f"Dataset saved sucessfully to: {output_dir}")
         else:
             # Upload to HuggingFace Hub
-            repo_url = converter.upload_to_hub(
-                dataset=dataset,
+            repo_url = converter.convert_and_upload(
                 repo_id=args.repo_id,
+                export_mode=args.mode,
+                window_size=args.window_size,
+                overlap=args.overlap,
+                batch_size=args.batchsize,
+                split_train=args.split_train,
+                split_seed=args.split_seed,
+                split_shuffle=args.split_shuffle,
+                mask_crop=args.mask_crop,
+                min_width=args.min_width,
+                min_height=args.min_height,
+                allow_empty=args.allow_empty,
                 token=args.token,
                 private=args.private,
+                append=args.append,
             )
             logger.info(f"Success! Dataset available at: {repo_url}")
 
