@@ -24,8 +24,8 @@ dependencies = [
     "loguru>=0.7.3",
     "lxml>=4.6.0",
     "numpy>=1.21.0",
-    "pandas>=2.0.3",
     "pillow>=9.0.0",
+    "requests>=2.25.0",
     "scikit-image>=0.21.0",
     "tqdm>=4.62.0",
 ]
@@ -48,6 +48,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
     "Topic :: Text Processing",
 ]
@@ -55,6 +56,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
+    "pytest-cov>=3.0",
     "black>=22.0",
     "flake8>=4.0",
     "mypy>=0.910",

@@ -68,6 +68,15 @@ class BaseExporter(ABC):
 class RawXMLExporter(BaseExporter):
     """Export raw images with their corresponding XML content."""
 
+    POST_FEATURES = Features(
+        {
+            "image": DatasetImage(decode=False),
+            "xml_content": Value("string"),
+            "filename": Value("string"),
+            "project_name": Value("string"),
+        }
+    )
+
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
 
@@ -76,15 +85,6 @@ class RawXMLExporter(BaseExporter):
         logger.info(f"Exporting raw XML content with images... (number of pages: {len(dataset)})")
 
         image_processor = ImageProcessor()
-
-        features = Features(
-            {
-                "image": DatasetImage(decode=False),
-                "xml_content": Value("string"),
-                "filename": Value("string"),
-                "project_name": Value("string"),
-            }
-        )
 
         def map_raw(batch):
             """
@@ -109,7 +109,7 @@ class RawXMLExporter(BaseExporter):
                 map_raw,
                 batched=True,
                 batch_size=self.batch_size,
-                features=features,
+                features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
             )
 
@@ -125,6 +125,15 @@ class RawXMLExporter(BaseExporter):
 
 class TextExporter(BaseExporter):
     """Export images with concatenated text content."""
+
+    POST_FEATURES = Features(
+        {
+            "image": DatasetImage(decode=False),
+            "text": Value("string"),
+            "filename": Value("string"),
+            "project_name": Value("string"),
+        }
+    )
 
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
@@ -177,21 +186,13 @@ class TextExporter(BaseExporter):
                 "project_name": batch["project_name"],
             }
 
-        post_features = Features(
-            {
-                "image": DatasetImage(decode=False),
-                "text": Value("string"),
-                "filename": Value("string"),
-                "project_name": Value("string"),
-            }
-        )
         try:
             logger.debug(f"Map the provided dataset.")
             dataset = dataset.map(
                 process_batch,
                 batched=True,
                 batch_size=self.batch_size,
-                features=post_features,
+                features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
             )
             logger.debug(dataset.info)
@@ -206,6 +207,16 @@ class TextExporter(BaseExporter):
 
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
+
+    POST_FEATURES = Features({
+        "image": DatasetImage(decode=False),
+        "text": Value("string"),
+        "region_id": Value("string"),
+        "region_reading_order": Value("int32"),
+        "region_type": Value("string"),
+        "filename": Value("string"),
+        "project_name": Value("string"),
+    })
 
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
@@ -228,22 +239,12 @@ class RegionExporter(BaseExporter):
             min_height=min_height,
         )
 
-        post_features = Features({
-            "image": DatasetImage(decode=False),
-            "text": Value("string"),
-            "region_id": Value("string"),
-            "region_reading_order": Value("int32"),
-            "region_type": Value("string"),
-            "filename": Value("string"),
-            "project_name": Value("string"),
-        })
-
         def map_regions(batch):
             """
             Mapping the regions
             """
             logger.info(f"Start mapping to regions...")
-            out = {k: [] for k in post_features.keys()}
+            out = {k: [] for k in self.POST_FEATURES.keys()}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
@@ -275,7 +276,7 @@ class RegionExporter(BaseExporter):
                 map_regions,
                 batched=True,
                 batch_size=self.batch_size,
-                features=post_features,
+                features=self.POST_FEATURES,
                 remove_columns=dataset.column_names
             )
         except Exception as e:
@@ -287,6 +288,18 @@ class RegionExporter(BaseExporter):
 
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
+
+    POST_FEATURES = Features({
+        "image": DatasetImage(decode=False),
+        "text": Value("string"),
+        "line_id": Value("string"),
+        "line_reading_order": Value("int64"),
+        "region_id": Value("string"),
+        "region_reading_order": Value("int64"),
+        "region_type": Value("string"),
+        "filename": Value("string"),
+        "project_name": Value("string"),
+    })
 
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
@@ -308,23 +321,11 @@ class LineExporter(BaseExporter):
             min_height=min_height,
         )
 
-        post_features = Features({
-            "image": DatasetImage(decode=False),
-            "text": Value("string"),
-            "line_id": Value("string"),
-            "line_reading_order": Value("int64"),
-            "region_id": Value("string"),
-            "region_reading_order": Value("int64"),
-            "region_type": Value("string"),
-            "filename": Value("string"),
-            "project_name": Value("string"),
-        })
-
         def map_lines(batch):
             """
             Mapping the lines and cropping them
             """
-            out = {k: [] for k in post_features.keys()}
+            out = {k: [] for k in self.POST_FEATURES.keys()}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
@@ -333,7 +334,8 @@ class LineExporter(BaseExporter):
                 for r in regions_list:
                     lines = r.get("text_lines", [])
                     for line in lines:
-                        if allow_empty and not line.get("text"): continue
+                        if not allow_empty and not line.get("text"):
+                            continue
 
                         crop_bytes = image_processor.crop_from_image(pil_image, line["coords"])
 
@@ -354,7 +356,7 @@ class LineExporter(BaseExporter):
                 map_lines,
                 batched=True,
                 batch_size=self.batch_size,
-                features=post_features,
+                features=self.POST_FEATURES,
                 remove_columns=dataset.column_names
             )
         except Exception as e:
@@ -366,6 +368,20 @@ class LineExporter(BaseExporter):
 
 class WindowExporter(BaseExporter):
     """Export sliding windows of text lines with configurable window size and overlap."""
+
+    # Note: POST_FEATURES is the same regardless of window_size parameter
+    POST_FEATURES = Features(
+        {
+            "image": DatasetImage(decode=False),
+            "text": Value("string"),
+            "window_size": Value("int64"),
+            "window_index": Value("int64"),
+            "line_ids": Value("string"),
+            "line_reading_order": Value("string"),
+            "filename": Value("string"),
+            "project_name": Value("string"),
+        }
+    )
 
     def __init__(
             self,
@@ -399,24 +415,11 @@ class WindowExporter(BaseExporter):
 
         image_processor = ImageProcessor(mask_crop=mask)
 
-        post_features = Features(
-            {
-                "image": DatasetImage(decode=False),
-                "text": Value("string"),
-                "window_size": Value("int64"),
-                "window_index": Value("int64"),
-                "line_ids": Value("string"),
-                "line_reading_order": Value("string"),
-                "filename": Value("string"),
-                "project_name": Value("string"),
-            }
-        )
-
         def map_windows(batch):
             """
             Function for dataset mapping.
             """
-            out = {k: [] for k in post_features.keys()}
+            out = {k: [] for k in self.POST_FEATURES.keys()}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
@@ -470,7 +473,7 @@ class WindowExporter(BaseExporter):
                 map_windows,
                 batched=True,
                 batch_size=self.batch_size,
-                features=post_features,
+                features=self.POST_FEATURES,
                 remove_columns=dataset.column_names
             )
         except Exception as e:

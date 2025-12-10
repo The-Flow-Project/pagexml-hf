@@ -289,7 +289,7 @@ class XmlParser:
                         img_bytes = src_image["bytes"]
 
                     elif hasattr(src_image, "save"):
-                        with io.BytesIO as buf:
+                        with io.BytesIO() as buf:
                             src_image.save(buf, format="JPEG")
                             img_bytes = buf.getvalue()
 

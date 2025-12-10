@@ -2,18 +2,19 @@
 Main converter class for Transkribus to HuggingFace datasets.
 """
 
-from typing import Dict, Any
 from pathlib import Path
-import os
+from typing import Dict, Any
 
 from datasets import (
     Dataset,
+    DatasetDict,
     Features,
     Image as DatasetImage,
     Value,
     List,
+    load_dataset
 )
-from huggingface_hub import create_repo, get_token
+from huggingface_hub import repo_exists
 
 from .exporters import (
     RawXMLExporter,
@@ -22,6 +23,8 @@ from .exporters import (
     LineExporter,
     WindowExporter,
 )
+
+from .hub_utils import HubUploader
 from .logger import logger
 
 POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
@@ -154,6 +157,69 @@ class XmlConverter:
             "avg_lines_per_region": total_lines / total_regions if total_regions > 0 else 0,
         }
 
+    def _check_exporter_feature_compatibility(
+            self,
+            repo_id: str,
+            export_mode: str,
+            token: str | None = None,
+    ) -> None:
+        """
+        Check if the exporter's post_features are compatible with existing repo.
+        This is called BEFORE data processing to save time.
+
+        Args:
+            repo_id: Repository ID to check against
+            export_mode: Export mode to get the expected features
+            token: HuggingFace token
+
+        Raises:
+            ValueError: If features are incompatible
+        """
+
+        # Check if repo exists
+        try:
+            exists = repo_exists(repo_id=repo_id, repo_type="dataset", token=token)
+            if not exists:
+                logger.info(f"Repository {repo_id} does not exist yet - no feature check needed")
+                return
+        except Exception as e:
+            logger.warning(f"Could not check if repo exists: {e}")
+            return
+
+        # Get expected features from exporter
+        exporter_class = self.EXPORT_MODES[export_mode]
+        expected_features = exporter_class.POST_FEATURES
+
+        logger.info(f"Checking feature compatibility with {repo_id} before processing data...")
+
+        # Load existing dataset features
+        try:
+            existing_ds = load_dataset(repo_id, split="train", streaming=True)
+            existing_features = None
+            for _ in existing_ds:
+                existing_features = existing_ds.features
+                break
+
+            if existing_features:
+                if str(expected_features) != str(existing_features):
+                    logger.error("Feature mismatch detected!")
+                    logger.error(f"Existing features: {existing_features}")
+                    logger.error(f"Expected features (from {export_mode} exporter): {expected_features}")
+                    raise ValueError(
+                        f"Feature mismatch! The {export_mode} exporter produces features that "
+                        f"don't match the existing dataset.\n"
+                        f"Existing: {existing_features}\n"
+                        f"Expected: {expected_features}\n"
+                        f"Use append=False to overwrite the dataset or choose a different export_mode."
+                    )
+                logger.info("✓ Features are compatible with existing dataset")
+        except ValueError:
+            # Re-raise ValueError - this is a critical error that must stop processing
+            raise
+        except Exception as e:
+            logger.warning(f"Could not verify features: {e}")
+            logger.info("Proceeding with data processing (feature check inconclusive)")
+
     def convert(
             self,
             export_mode: str = "text",
@@ -253,14 +319,17 @@ class XmlConverter:
 
     def upload_to_hub(
             self,
-            dataset: Dataset,
+            dataset: Dataset | DatasetDict,
             repo_id: str,
             token: str | None = None,
             private: bool = False,
             commit_message: str | None = None,
+            append: bool = False,
     ) -> str:
         """
-        Upload dataset to HuggingFace Hub.
+        Upload dataset to HuggingFace Hub using parquet shards (memory efficient).
+
+        Data is organized by split and project: /data/<split>/<project_name>/<timestamp>-<shard>.parquet
 
         Args:
             dataset: The dataset to upload
@@ -268,59 +337,41 @@ class XmlConverter:
             token: HuggingFace token (if None, will try to get from cache or HF_TOKEN env var)
             private: Whether to make the repo private
             commit_message: Custom commit message
+            append: If True, add as new parquet shard (checks feature compatibility).
+                   If False, overwrite all existing data. Default: False
 
         Returns:
             Repository URL
         """
-        # Try to get token in this order:
-        # 1. Explicit token parameter
-        # 2. HF_TOKEN environment variable
-        # 3. HuggingFace cache (from huggingface-cli login)
-        if token is None:
-            token = os.getenv("HF_TOKEN")
-            if token is None:
+        # Check feature compatibility if appending
+        if append and self.exporter is not None:
+            # We can infer the export_mode from the exporter instance
+            export_mode = None
+            for mode, exporter_class in self.EXPORT_MODES.items():
+                if isinstance(self.exporter, exporter_class):
+                    export_mode = mode
+                    break
+
+            if export_mode:
                 try:
-                    token = get_token()
-                except Exception as e:
-                    logger.error(f"Error getting token: {e}")
+                    self._check_exporter_feature_compatibility(
+                        repo_id=repo_id,
+                        export_mode=export_mode,
+                        token=token,
+                    )
+                except ValueError:
+                    # Feature mismatch - abort upload
+                    raise
 
-        # If still no token, provide helpful error message
-        if token is None:
-            raise ValueError(
-                "No HuggingFace token found. Please either:\n"
-                "1. Run 'huggingface-cli login' to authenticate\n"
-                "2. Set HF_TOKEN environment variable\n"
-                "3. Pass token parameter directly"
-            )
-
-        # Create repository if it doesn't exist
-        try:
-            create_repo(
-                repo_id=repo_id,
-                repo_type="dataset",
-                private=private,
-                token=token,
-                exist_ok=True,
-            )
-            logger.info(f"Repository {repo_id} created/verified")
-        except Exception as e:
-            logger.error(f"Error creating repository: {e}")
-            raise
-
-        # Upload dataset
-        if commit_message is None:
-            commit_message = f"Upload Transkribus dataset from {self.source_name}"
-
-        logger.info(f"Uploading dataset to {repo_id}...")
-        dataset.push_to_hub(
+        uploader = HubUploader(source_name=self.source_name)
+        return uploader.upload_to_hub(
+            dataset=dataset,
             repo_id=repo_id,
             token=token,
+            private=private,
             commit_message=commit_message,
+            append=append,
         )
-
-        repo_url = f"https://huggingface.co/datasets/{repo_id}"
-        logger.info(f"Dataset uploaded successfully: {repo_url}")
-        return repo_url
 
     def convert_and_upload(
             self,
@@ -329,14 +380,22 @@ class XmlConverter:
             token: str | None = None,
             private: bool = False,
             commit_message: str | None = None,
+            batch_size: int = 32,
+            mask_crop: bool | None = False,
+            min_width: int | None = None,
+            min_height: int | None = None,
+            allow_empty: bool | None = False,
             window_size: int = 2,
             overlap: int = 0,
             split_train: float | None = None,
             split_seed: int | None = 42,
             split_shuffle: bool | None = False,
+            append: bool = False,
     ) -> str:
         """
-        Convert and upload in one step.
+        Convert and upload in one step using parquet shards (memory efficient).
+
+        Data is organized by split and project: /data/<split>/<project_name>/<timestamp>-<shard>.parquet
 
         Args:
             repo_id: Repository ID (e.g., "username/dataset-name")
@@ -344,26 +403,56 @@ class XmlConverter:
             token: HuggingFace token
             private: Whether to make the repo private
             commit_message: Custom commit message
+            batch_size: Batch size for dataset mapping
+            mask_crop: Whether to crop the mask to polygon (only for region and line mode)
+            min_width: Minimum width of the regions/lines to be processed \
+                (only for region and line mode)
+            min_height: Minimum height of the regions/lines to be processed \
+                (only for region and line mode)
+            allow_empty: Whether to allow empty elements in the output (default: False)
             window_size: Number of lines per window (only for window mode)
             overlap: Number of lines to overlap between windows (only for window mode)
             split_train: Split train set size (between 0 and 1, e.g. 0.8 for 80% train, 20% test)
             split_seed: Random seed for train/test split
             split_shuffle: Whether to shuffle the dataset before splitting
+            append: If True, add as new parquet shard (checks feature compatibility).
+                   If False, overwrite all existing data. Default: False
         Returns:
             Repository URL
         """
+        # Check feature compatibility BEFORE expensive data processing
+        logger.debug(f"Convert and upload with export_mode={export_mode}, append={append}")
+        if append:
+            try:
+                self._check_exporter_feature_compatibility(
+                    repo_id=repo_id,
+                    export_mode=export_mode,
+                    token=token,
+                )
+            except ValueError:
+                # Feature mismatch - abort before processing
+                raise
+
+        # Convert the data
         dataset = self.convert(
             export_mode=export_mode,
+            batch_size=batch_size,
+            mask_crop=mask_crop,
+            min_width=min_width,
+            min_height=min_height,
+            allow_empty=allow_empty,
             window_size=window_size,
             overlap=overlap,
             split_train=split_train,
             split_seed=split_seed,
             split_shuffle=split_shuffle,
         )
+
         return self.upload_to_hub(
             dataset=dataset,
             repo_id=repo_id,
             token=token,
             private=private,
             commit_message=commit_message,
+            append=append,
         )
