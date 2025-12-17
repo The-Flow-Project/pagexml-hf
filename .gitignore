@@ -195,5 +195,3 @@ cython_debug/
 
 .DS_Store
 .idea/
-
-uv.lock

@@ -325,8 +325,10 @@ def main():
             repo_url = converter.convert_and_upload(
                 repo_id=args.repo_id,
                 export_mode=args.mode,
-                window_size=args.window_size,
-                overlap=args.overlap,
+                token=args.token,
+                private=args.private,
+                allow_empty=args.allow_empty,
+                append=args.append,
                 batch_size=args.batchsize,
                 split_train=args.split_train,
                 split_seed=args.split_seed,
@@ -334,10 +336,8 @@ def main():
                 mask_crop=args.mask_crop,
                 min_width=args.min_width,
                 min_height=args.min_height,
-                allow_empty=args.allow_empty,
-                token=args.token,
-                private=args.private,
-                append=args.append,
+                window_size=args.window_size,
+                overlap=args.overlap,
             )
             logger.info(f"Success! Dataset available at: {repo_url}")
 
