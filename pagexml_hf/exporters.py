@@ -111,6 +111,7 @@ class RawXMLExporter(BaseExporter):
                 batch_size=self.batch_size,
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
+                load_from_cache_file=False,
             )
 
             logger.debug(dataset.info)
@@ -194,6 +195,7 @@ class TextExporter(BaseExporter):
                 batch_size=self.batch_size,
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
+                load_from_cache_file=False,
             )
             logger.debug(dataset.info)
             logger.debug(dataset.features)
@@ -277,7 +279,8 @@ class RegionExporter(BaseExporter):
                 batched=True,
                 batch_size=self.batch_size,
                 features=self.POST_FEATURES,
-                remove_columns=dataset.column_names
+                remove_columns=dataset.column_names,
+                load_from_cache_file=False,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
@@ -357,7 +360,8 @@ class LineExporter(BaseExporter):
                 batched=True,
                 batch_size=self.batch_size,
                 features=self.POST_FEATURES,
-                remove_columns=dataset.column_names
+                remove_columns=dataset.column_names,
+                load_from_cache_file=False,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
@@ -474,7 +478,8 @@ class WindowExporter(BaseExporter):
                 batched=True,
                 batch_size=self.batch_size,
                 features=self.POST_FEATURES,
-                remove_columns=dataset.column_names
+                remove_columns=dataset.column_names,
+                load_from_cache_file=False,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")

@@ -318,7 +318,8 @@ def main():
             # Dataset saved as arrow
             logger.debug(f"Saving dataset to {output_dir} with save_to_disk()")
             dataset.save_to_disk(output_dir)
-
+            no_cache_deleted = dataset.cleanup_cache_files()
+            logger.debug(f"Cache files deleted: {no_cache_deleted}")
             logger.info(f"Dataset saved sucessfully to: {output_dir}")
         else:
             # Upload to HuggingFace Hub

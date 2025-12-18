@@ -12,7 +12,8 @@ from datasets import (
     Image as DatasetImage,
     Value,
     List,
-    load_dataset
+    load_dataset,
+    disable_caching,
 )
 from huggingface_hub import repo_exists
 
@@ -26,6 +27,9 @@ from .exporters import (
 
 from .hub_utils import HubUploader
 from .logger import logger
+
+# Disable dataset caching to force rebuilding each time
+disable_caching()
 
 POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
 
@@ -119,33 +123,26 @@ class XmlConverter:
         return ds
 
     def _compute_stats(self, dataset: Dataset):
-        total_regions = 0
-        total_lines = 0
         projects = set()
+        for project in dataset["project_name"]:
+            projects.add(project)
+        total_pages = len(set(dataset["filename"]))
         logger.debug(f"Columns of dataset: {dataset.column_names}")
 
-        if "regions" in dataset.column_names and dataset["regions"] is not None:
+        if "region_id" in dataset.column_names and dataset["region_id"] is not None:
             logger.info("Computing statistics for regions.")
-            stats_batch = dataset.select_columns(["regions", "project_name"])
-
-            for item in stats_batch:
-                if item["project_name"] is not None:
-                    projects.add(item["project_name"])
-
-                if item["regions"] is not None:
-                    regions_list = item["regions"]
-                    total_regions += len(regions_list)
-
-                    for r in regions_list:
-                        total_lines += len(r["text_lines"])
+            total_regions = len(set(dataset["region_id"]))
+            logger.info("Computing statistics for lines.")
+            if "line_id" in dataset.column_names and dataset["line_id"] is not None:
+                total_lines = len(dataset)
+                total_unique_lines = len(set(dataset["line_id"]))
+                logger.info(f"Total unique lines: {total_unique_lines}")
+            else:
+                total_lines = 0
         else:
             logger.info("Computing statistics for pages (no regions found).")
             total_regions = 0
             total_lines = 0
-            for project in dataset["project_name"]:
-                projects.add(project)
-
-        total_pages = len(dataset)
 
         self.stats_cache = {
             "total_pages": total_pages,
@@ -265,10 +262,6 @@ class XmlConverter:
         logger.debug(f"Base dataset: {base_dataset.info}")
         logger.debug("#" * 80)
 
-        if self.stats_cache is None:
-            logger.debug("Computing statistics...")
-            self._compute_stats(base_dataset)
-
         # Handle both zip and folder path for exporters
         exporter_class = self.EXPORT_MODES[export_mode]
         if export_mode == "window":
@@ -296,6 +289,10 @@ class XmlConverter:
             )
         else:
             dataset = self.exporter.process_dataset(dataset=base_dataset)
+
+        if self.stats_cache is None:
+            logger.debug("Computing statistics...")
+            self._compute_stats(dataset)
 
         logger.info(f"Exported dataset")
 
@@ -447,6 +444,9 @@ class XmlConverter:
             split_seed=split_seed,
             split_shuffle=split_shuffle,
         )
+
+        cache_files_deleted = dataset.cleanup_cache_files()
+        logger.debug(f"Number of cache files deleted: {cache_files_deleted}")
 
         return self.upload_to_hub(
             dataset=dataset,
