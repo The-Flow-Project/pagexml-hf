@@ -453,28 +453,21 @@ This dataset was created using pagexml-hf converter from Transkribus PageXML dat
 
 ## Dataset Summary
 
-This dataset contains {total_samples} samples across {len(total_splits_info)} split(s).
+This dataset contains {total_samples:'} samples across {len(total_splits_info)} split(s).
 
-### Projects Included
-
-"""
-        for project in sorted(all_projects):
-            readme += f"- {project}\n"
-
-        readme += """
 ## Dataset Structure
 
 ### Data Splits
 
 """
         for split_name, count in total_splits_info.items():
-            readme += f"- **{split_name}**: {count} samples\n"
+            readme += f"- **{split_name}**: {count:'} samples\n"
 
         readme += f"""
 ### Dataset Size
 
-- Approximate total size: {approx_total_size_mb:.2f} MB
-- Total samples: {total_samples}
+- Approximate total size: {approx_total_size_mb:'.2f} MB
+- Total samples: {total_samples:'}
 
 ### Features
 
@@ -506,6 +499,12 @@ dataset = load_dataset("{repo_id}")
 # Load specific split
 train_dataset = load_dataset("{repo_id}", split="train")
 ```
+
+### Projects Included
+
+"""
+        readme += f"{', '.join(sorted(all_projects))}\n"
+        readme += """
 """
         return readme
 
