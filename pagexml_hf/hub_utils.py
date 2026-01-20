@@ -393,9 +393,7 @@ class ReadmeGenerator:
             )
 
             new_readme = ReadmeGenerator._build_readme_content(
-                existing_readme_content=existing_readme_content,
                 yaml_config=yaml_config,
-                append=append,
                 repo_id=repo_id,
                 total_splits_info=total_splits_info,
                 all_projects=merged_projects,
@@ -428,9 +426,7 @@ class ReadmeGenerator:
 
     @staticmethod
     def _build_readme_content(
-            existing_readme_content: str | None,
             yaml_config: str,
-            append: bool,
             repo_id: str,
             total_splits_info: Dict[str, int],
             all_projects: list,
@@ -546,13 +542,11 @@ class ReadmeParser:
                 else:
                     projects_section = content_after
 
-                # Extract project names (lines starting with "- ")
-                for line in projects_section.split('\n'):
-                    line = line.strip()
-                    if line.startswith('- '):
-                        project_name = line[2:].strip()
-                        if project_name:
-                            projects.append(project_name)
+                # Extract project names
+                for project in projects_section.split(','):
+                    project_name = project.strip()
+                    if project_name:
+                        projects.append(project_name)
 
         if projects:
             logger.info(f"Parsed {len(projects)} existing project(s) from README: {projects}")
