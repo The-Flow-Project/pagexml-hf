@@ -20,14 +20,16 @@ requires-python = ">=3.10"
 dependencies = [
     "chardet>=4.0.0",
     "datasets>=4.5.0",
-    "huggingface-hub>=0.15.0",
+    "huggingface-hub>=1.4.1",
     "loguru>=0.7.3",
     "lxml>=4.6.0",
-    "numpy>=1.21.0",
-    "pillow>=9.0.0",
-    "requests>=2.25.0",
-    "scikit-image>=0.21.0",
-    "tqdm>=4.62.0",
+    "numpy>=2.2.6,<2.3; python_full_version < '3.11'",
+    "numpy>=2.4.2,<2.5; python_full_version >= '3.11'",
+    "pillow>=12.1.1",
+    "requests>=2.32.5",
+    "scikit-image>=0.25.2; python_full_version < '3.11'",
+    "scikit-image>=0.26.0; python_full_version >= '3.11'",
+    "tqdm>=4.67.3",
 ]
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
