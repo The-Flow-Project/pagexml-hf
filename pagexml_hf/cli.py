@@ -8,17 +8,14 @@ import sys
 import shutil
 from pathlib import Path
 import traceback
-from datasets import get_dataset_config_names
-
-from .converter import XmlConverter
-from .parser import XmlParser
-from .logger import init_debug_logger, init_info_logger
 
 
 class SourcePathAction(argparse.Action):
     """Custom action to handle source path validation."""
 
     def __call__(self, parser, namespace, value, option_string=None):
+        from datasets import get_dataset_config_names  # lazy loading
+
         token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
 
         if value.startswith('http://') or value.startswith('https://'):
@@ -212,6 +209,12 @@ def main():
     # ################ - end region/line mode arguments - ####################
 
     args = parser.parse_args()
+
+    # Lazy imports to speed up CLI startup and avoid unnecessary dependencies if not used
+    from .converter import XmlConverter
+    from .parser import XmlParser
+    from .logger import init_debug_logger, init_info_logger
+
     source_path, source_type = args.source_path
 
     if args.debug:
