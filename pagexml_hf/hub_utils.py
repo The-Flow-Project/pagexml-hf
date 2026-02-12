@@ -181,6 +181,8 @@ class HubUploader:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
+            data_root = tmp_path / "data"
+            data_root.mkdir(parents=True, exist_ok=True)
 
             # Normalize to DatasetDict
             if isinstance(dataset, Dataset):
@@ -204,20 +206,28 @@ class HubUploader:
                     project_dataset = split_dataset.select(project_indices)
                     split_total_samples += len(project_dataset)
 
-                    # Create and upload shards
+                    # Create shards on disk
                     self._upload_project_shards(
-                        api=api,
                         project_dataset=project_dataset,
                         project_name=project_name,
                         split_name=split_name,
                         timestamp=timestamp,
-                        tmp_path=tmp_path,
-                        repo_id=repo_id,
-                        commit_message=commit_message,
+                        data_root=data_root,
                     )
 
                 splits_info[split_name] = split_total_samples
                 logger.info(f"✓ Split '{split_name}' complete ({split_total_samples} samples)")
+
+            # Upload all shards in a single batch
+            logger.info("Uploading parquet shards with upload_folder...")
+            api.upload_folder(
+                folder_path=str(data_root),
+                path_in_repo="data",
+                repo_id=repo_id,
+                repo_type="dataset",
+                commit_message=commit_message,
+            )
+            logger.info("✓ Parquet shards uploaded")
 
             # Create or update README
             logger.info("Creating/updating README.md with dataset configuration...")
@@ -238,16 +248,13 @@ class HubUploader:
 
     @staticmethod
     def _upload_project_shards(
-            api: HfApi,
             project_dataset: Dataset,
             project_name: str,
             split_name: str,
             timestamp: str,
-            tmp_path: Path,
-            repo_id: str,
-            commit_message: str,
+            data_root: Path,
     ) -> None:
-        """Upload shards for a single project."""
+        """Write shards for a single project under the temp data root."""
         shard_size = 10000
         num_shards = max(1, (len(project_dataset) + shard_size - 1) // shard_size)
 
@@ -257,7 +264,7 @@ class HubUploader:
             shard_dataset = project_dataset.select(range(start_idx, end_idx))
 
             # Create directory structure
-            project_dir = tmp_path / split_name / project_name
+            project_dir = data_root / split_name / project_name
             project_dir.mkdir(parents=True, exist_ok=True)
 
             # Save as parquet
@@ -271,18 +278,7 @@ class HubUploader:
                 f"shard {shard_idx + 1}/{num_shards} ({len(shard_dataset)} samples)..."
             )
             shard_dataset.to_parquet(str(parquet_file))
-
-            # Upload parquet file
-            path_in_repo = f"data/{split_name}/{project_name}/{parquet_file.name}"
-            logger.info(f"Uploading {path_in_repo}...")
-            api.upload_file(
-                path_or_fileobj=str(parquet_file),
-                path_in_repo=path_in_repo,
-                repo_id=repo_id,
-                repo_type="dataset",
-                commit_message=f"{commit_message} - {split_name}/{project_name}",
-            )
-            logger.info(f"✓ Uploaded shard {shard_idx + 1}/{num_shards}")
+            logger.info(f"✓ Saved shard {shard_idx + 1}/{num_shards}")
 
 
 class ProjectGrouper:
@@ -449,7 +445,7 @@ This dataset was created using pagexml-hf converter from Transkribus PageXML dat
 
 ## Dataset Summary
 
-This dataset contains {total_samples:'} samples across {len(total_splits_info)} split(s).
+This dataset contains {total_samples:,} samples across {len(total_splits_info)} split(s).
 
 ## Dataset Structure
 
@@ -457,13 +453,13 @@ This dataset contains {total_samples:'} samples across {len(total_splits_info)} 
 
 """
         for split_name, count in total_splits_info.items():
-            readme += f"- **{split_name}**: {count:'} samples\n"
+            readme += f"- **{split_name}**: {count:,} samples\n"
 
         readme += f"""
 ### Dataset Size
 
-- Approximate total size: {approx_total_size_mb:'.2f} MB
-- Total samples: {total_samples:'}
+- Approximate total size: {approx_total_size_mb:,.2f} MB
+- Total samples: {total_samples:,}
 
 ### Features
 
@@ -621,7 +617,7 @@ class FeatureYamlConverter:
     def feature_to_yaml(name: str, feature: Any, indent: int = 0) -> list:
         """Convert a dataset feature to YAML lines."""
         lines = []
-        spaces = "  " * indent
+        spaces = " " * indent
 
         lines.append(f"{spaces}- name: {name}")
 
