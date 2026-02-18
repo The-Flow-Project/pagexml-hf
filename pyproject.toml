@@ -26,8 +26,7 @@ dependencies = [
     "numpy",
     "pillow>=12.1.1",
     "requests>=2.32.5",
-    "scikit-image>=0.25.2; python_full_version < '3.11'",
-    "scikit-image>=0.26.0; python_full_version >= '3.11'",
+    "scikit-image",
     "tqdm>=4.67.3",
 ]
 readme = { file = "README.md", content-type = "text/markdown" }
