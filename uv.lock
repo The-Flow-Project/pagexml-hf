@@ -1511,9 +1511,8 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=3.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "scikit-image", marker = "python_full_version < '3.11'", specifier = ">=0.25.2" },
-    { name = "scikit-image", marker = "python_full_version >= '3.11'", specifier = ">=0.26.0" },
-    { name = "tqdm", specifier = ">=4.67.3" },
+    { name = "scikit-image" },
+    { name = "tqdm" },
 ]
 provides-extras = ["dev"]
 
