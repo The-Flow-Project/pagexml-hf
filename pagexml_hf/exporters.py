@@ -121,6 +121,7 @@ class RawXMLExporter(BaseExporter):
         except Exception as e:
             logger.error(f"Error preparing raw XML dataset: {e}")
             dataset = None
+            raise e
         return dataset
 
 

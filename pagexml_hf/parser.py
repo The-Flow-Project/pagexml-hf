@@ -64,6 +64,7 @@ class XmlParser:
         Returns:
             Generator of page data
         """
+        logger.info(f"Parsing ZIP file: {str(zip_path)}")
 
         if zip_path.startswith("http://") or zip_path.startswith("https://"):
             try:
@@ -260,11 +261,9 @@ class XmlParser:
                         (did you set a token for private datasets?)"
                 ) from e
         elif isinstance(dataset, datasets.Dataset):
-            ds = dataset.to_iterable_dataset()
-        elif isinstance(dataset, datasets.IterableDataset):
             ds = dataset
         else:
-            raise ValueError("dataset must be a string, Dataset, or IterableDataset")
+            raise ValueError("dataset must be a string or Dataset")
 
         logger.debug(f"Dataset loaded:\n{ds}")
 
@@ -387,16 +386,15 @@ class XmlParser:
     def _parse_page_xml(self, xml_content: str) -> Dict | None:
         """Parse a single PAGE XML file."""
         try:
-            # logger.debug(f"Parsing XML {xml_content.encode()}")
-            tree = et.parse(
-                io.BytesIO(xml_content.encode()),
+            # logger.debug(f"Parsing XML content")
+            root = et.fromstring(
+                xml_content,
                 parser=et.XMLParser(
                     encoding='utf-8',
                     ns_clean=True,
                     compact=False,
                 )
             )
-            root = tree.getroot()
             logger.debug(f"DefaultNamespace: {root.nsmap.get(None)}")
             self.namespace = {'pc': root.nsmap.get(None)}
             logger.debug(f"Namespace: {self.namespace}")

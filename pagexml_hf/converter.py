@@ -445,8 +445,8 @@ class XmlConverter:
             split_shuffle=split_shuffle,
         )
 
-        cache_files_deleted = dataset.cleanup_cache_files()
-        logger.debug(f"Number of cache files deleted: {cache_files_deleted}")
+        # cache_files_deleted = dataset.cleanup_cache_files()
+        # logger.debug(f"Number of cache files deleted: {cache_files_deleted}")
 
         return self.upload_to_hub(
             dataset=dataset,
