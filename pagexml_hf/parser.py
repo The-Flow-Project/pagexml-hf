@@ -81,6 +81,8 @@ class XmlParser:
                 raise ValueError(f"{zip_path} is not a valid ZIP file")
             zip_file = zipfile.ZipFile(zip_path)
 
+        yielded = 0
+
         # Open ZipFile
         with zip_file:
             # Get all files in the ZIP
@@ -158,7 +160,10 @@ class XmlParser:
 
                 logger.debug(f"Got row: {list(row.keys())}")
 
+                yielded += 1
                 yield row
+            if yielded == 0:
+                logger.warning(f"No valid pages found in ZIP file: {str(zip_path)}")
 
     def parse_folder(self, folder_path: str, parse_xml: bool = False):
         """
@@ -386,15 +391,16 @@ class XmlParser:
     def _parse_page_xml(self, xml_content: str) -> Dict | None:
         """Parse a single PAGE XML file."""
         try:
-            # logger.debug(f"Parsing XML content")
-            root = et.fromstring(
-                xml_content,
+            logger.debug(f"Parsing XML content")
+            tree = et.parse(
+                io.BytesIO(xml_content.encode()),
                 parser=et.XMLParser(
-                    encoding='utf-8',
+                    encoding="utf-8",
                     ns_clean=True,
                     compact=False,
                 )
             )
+            root = tree.getroot()
             logger.debug(f"DefaultNamespace: {root.nsmap.get(None)}")
             self.namespace = {'pc': root.nsmap.get(None)}
             logger.debug(f"Namespace: {self.namespace}")

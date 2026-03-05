@@ -93,8 +93,11 @@ class XmlConverter:
             source_path (str, optional): Source path for the data to convert.
             source_type (str, optional): Source type for the data to convert.
         """
-        self.gen_func = gen_func
-        self.gen_kwargs = gen_kwargs
+
+        def generation_wrapper():
+            yield from gen_func(**gen_kwargs)
+
+        self.gen_func = generation_wrapper
         self.exporter = None
 
         # Metadata
@@ -113,10 +116,13 @@ class XmlConverter:
         Writes the data to disk (Arrow format) to prevent OOM.
         """
         logger.info("Creating dataset (temporary local, page-level).")
+        logger.debug(f"gen_func: {self.gen_func}")
+
+        # Debug: Manuell den Generator aufrufen, um zu sehen, ob Daten kommen
+        logger.info("Testing generator manually before Dataset.from_generator()...")
 
         ds = Dataset.from_generator(
-            self.gen_func,
-            gen_kwargs=self.gen_kwargs,
+            generator=self.gen_func,
             features=PRE_FEATURES,
         )
         logger.debug(f"Created dataset ({ds.info}).")
