@@ -7,7 +7,7 @@ from typing import List, Tuple
 from skimage import draw
 from PIL import Image
 
-from .logger import logger
+from loguru import logger
 
 
 class ImageProcessor:

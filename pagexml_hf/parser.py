@@ -9,14 +9,13 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Any
+from loguru import logger
 
 import chardet
 import datasets
 import lxml.etree as et
 import requests
 from datasets import load_dataset
-
-from .logger import logger
 
 
 @dataclass
@@ -291,12 +290,12 @@ class XmlParser:
 
                     if isinstance(src_image, dict) and "bytes" in src_image:
                         img_bytes = src_image["bytes"]
-
-                    elif hasattr(src_image, "save"):
-                        with io.BytesIO() as buf:
-                            src_image.save(buf, format="JPEG")
-                            img_bytes = buf.getvalue()
-
+                        """
+                        elif hasattr(src_image, "save"):
+                            with io.BytesIO() as buf:
+                                src_image.save(buf, format="JPEG")
+                                img_bytes = buf.getvalue()
+                        """
                     elif isinstance(src_image, bytes):
                         img_bytes = src_image
                     else:

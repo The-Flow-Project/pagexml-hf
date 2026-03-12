@@ -11,8 +11,12 @@ from .exporters import (
     LineExporter,
     WindowExporter,
 )
+from .logger import setup_logger
 
-__version__ = "0.7.1+fork.1"
+LOGGING_LEVEL = "INFO"
+setup_logger(LOGGING_LEVEL)
+
+__version__ = "0.9.0+fork.1"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "l0rn0r"]
 

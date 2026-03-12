@@ -13,7 +13,7 @@ from datasets import (
     List
 )
 
-from .logger import logger
+from loguru import logger
 from .imageutils import ImageProcessor
 
 # Allow loading of truncated images
@@ -112,6 +112,7 @@ class RawXMLExporter(BaseExporter):
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
                 load_from_cache_file=False,
+                # num_proc=1,
             )
 
             logger.debug(dataset.info)
@@ -120,7 +121,6 @@ class RawXMLExporter(BaseExporter):
             logger.info(f"Raw XML dataset prepared")
         except Exception as e:
             logger.error(f"Error preparing raw XML dataset: {e}")
-            dataset = None
             raise e
         return dataset
 
@@ -197,6 +197,7 @@ class TextExporter(BaseExporter):
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
                 load_from_cache_file=False,
+                # num_proc=1,
             )
             logger.debug(dataset.info)
             logger.debug(dataset.features)
@@ -282,6 +283,7 @@ class RegionExporter(BaseExporter):
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
                 load_from_cache_file=False,
+                # num_proc=1,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
@@ -363,6 +365,7 @@ class LineExporter(BaseExporter):
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
                 load_from_cache_file=False,
+                # num_proc=1,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
@@ -481,6 +484,7 @@ class WindowExporter(BaseExporter):
                 features=self.POST_FEATURES,
                 remove_columns=dataset.column_names,
                 load_from_cache_file=False,
+                # num_proc=1,
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")

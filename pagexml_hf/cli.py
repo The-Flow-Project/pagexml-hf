@@ -9,6 +9,9 @@ import shutil
 from pathlib import Path
 import traceback
 
+from loguru import logger
+from .logger import setup_logger
+
 
 class SourcePathAction(argparse.Action):
     """Custom action to handle source path validation."""
@@ -213,14 +216,13 @@ def main():
     # Lazy imports to speed up CLI startup and avoid unnecessary dependencies if not used
     from .converter import XmlConverter
     from .parser import XmlParser
-    from .logger import init_debug_logger, init_info_logger
 
     source_path, source_type = args.source_path
 
     if args.debug:
-        logger = init_debug_logger()
+        setup_logger()  # Set to DEBUG level
     else:
-        logger = init_info_logger()
+        setup_logger("INFO")
 
     logger.info("Process started via CLI")
     logger.info("Source path: {}".format(source_path))

@@ -4,6 +4,7 @@ Main converter class for Transkribus to HuggingFace datasets.
 
 from pathlib import Path
 from typing import Dict, Any
+from loguru import logger
 
 from datasets import (
     Dataset,
@@ -26,7 +27,6 @@ from .exporters import (
 )
 
 from .hub_utils import HubUploader
-from .logger import logger
 
 # Disable dataset caching to force rebuilding each time
 disable_caching()
@@ -94,10 +94,8 @@ class XmlConverter:
             source_type (str, optional): Source type for the data to convert.
         """
 
-        def generation_wrapper():
-            yield from gen_func(**gen_kwargs)
-
-        self.gen_func = generation_wrapper
+        self.gen_func = gen_func
+        self.gen_kwargs = gen_kwargs
         self.exporter = None
 
         # Metadata
@@ -110,20 +108,26 @@ class XmlConverter:
 
         self.stats_cache = None
 
+    @staticmethod
+    def generation_wrapper(gen_func, gen_kwargs):
+        """
+        Wrapper function to call the generator with the provided kwargs.
+        """
+        yield from gen_func(**gen_kwargs)
+
     def _create_base_dataset(self) -> Dataset:
         """
         Creates initial raw dataset from the generator.
         Writes the data to disk (Arrow format) to prevent OOM.
         """
-        logger.info("Creating dataset (temporary local, page-level).")
         logger.debug(f"gen_func: {self.gen_func}")
 
-        # Debug: Manuell den Generator aufrufen, um zu sehen, ob Daten kommen
-        logger.info("Testing generator manually before Dataset.from_generator()...")
-
         ds = Dataset.from_generator(
-            generator=self.gen_func,
+            generator=self.generation_wrapper,
+            gen_kwargs={"gen_func": self.gen_func, "gen_kwargs": self.gen_kwargs},
             features=PRE_FEATURES,
+            keep_in_memory=True,
+            num_proc=1,
         )
         logger.debug(f"Created dataset ({ds.info}).")
         return ds

@@ -20,7 +20,7 @@ from datasets import (
 )
 from huggingface_hub import HfApi, create_repo, get_token, repo_exists
 
-from .logger import logger
+from loguru import logger
 
 
 class HubUploader:
