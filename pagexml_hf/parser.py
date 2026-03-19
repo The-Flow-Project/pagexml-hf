@@ -555,7 +555,7 @@ class XmlParser:
         return None
 
     @staticmethod
-    def _parse_coords(coords_elem: et.Element | None) -> List[List[int]]:
+    def _parse_coords(coords_elem: Optional[et.Element]) -> List[List[int]]:
         """Parse coordinates from a Coords element."""
         if coords_elem is None:
             return []

@@ -13,10 +13,8 @@ from .exporters import (
 )
 from .logger import setup_logger
 
-"""
 LOGGING_LEVEL = "INFO"
 setup_logger(LOGGING_LEVEL)
-"""
 
 __version__ = "0.9.1+fork.1"
 __license__ = "MIT"

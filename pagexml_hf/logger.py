@@ -12,6 +12,8 @@ def setup_logger(level: str = "DEBUG") -> None:
     """
     logger.remove()
 
+    diagnose = True if level == "DEBUG" else False
+
     # Console handler with colored output
     logger.add(
         sys.stderr,
@@ -19,11 +21,10 @@ def setup_logger(level: str = "DEBUG") -> None:
         level=level,
         colorize=True,
         backtrace=False,
-        diagnose=False,
-        enqueue=False,
+        diagnose=diagnose,
+        enqueue=True,
     )
 
-    """
     # File handler for all logs with rotation
     logs_dir = Path("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -35,8 +36,8 @@ def setup_logger(level: str = "DEBUG") -> None:
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         backtrace=True,
-        diagnose=True,
-        enqueue=False,  # Thread-safe logging
+        diagnose=diagnose,
+        enqueue=True,  # Thread-safe logging
     )
 
     # Separate error log file
@@ -47,10 +48,9 @@ def setup_logger(level: str = "DEBUG") -> None:
         level="ERROR",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         backtrace=True,
-        diagnose=True,
-        enqueue=False,
+        diagnose=diagnose,
+        enqueue=True,
     )
-    """
 
     logger.debug(f"Logger initialized with level: {level}")
 
