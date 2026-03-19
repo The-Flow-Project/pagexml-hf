@@ -219,10 +219,12 @@ def main():
 
     source_path, source_type = args.source_path
 
+    """
     if args.debug:
         setup_logger()  # Set to DEBUG level
     else:
         setup_logger("INFO")
+    """
 
     logger.info("Process started via CLI")
     logger.info("Source path: {}".format(source_path))

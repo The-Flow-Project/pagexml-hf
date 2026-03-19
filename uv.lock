@@ -1498,7 +1498,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=22.0" },
-    { name = "chardet", specifier = ">=4.0.0" },
+    { name = "chardet", specifier = "<=5.2.0" },
     { name = "datasets", specifier = ">=4.5.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "huggingface-hub", specifier = ">=1.4.1" },
@@ -1509,7 +1509,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "requests", specifier = ">=2.32.5" },
+    { name = "requests", specifier = ">=2.0.0" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scikit-image" },
     { name = "tqdm" },

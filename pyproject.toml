@@ -18,14 +18,14 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "chardet>=4.0.0",
+    "chardet<=5.2.0",
     "datasets>=4.5.0",
     "huggingface-hub>=1.4.1",
     "loguru>=0.7.3",
     "lxml>=4.6.0",
     "numpy",
     "pillow>=12.1.1",
-    "requests>=2.32.5",
+    "requests>=2.0.0",
     "scikit-image",
     "tqdm",
 ]

@@ -5,6 +5,7 @@ from loguru import logger
 from pathlib import Path
 import sys
 
+
 def setup_logger(level: str = "DEBUG") -> None:
     """
     Add a debug logger to the root logger.
@@ -19,9 +20,10 @@ def setup_logger(level: str = "DEBUG") -> None:
         colorize=True,
         backtrace=False,
         diagnose=False,
-        enqueue=True,
+        enqueue=False,
     )
 
+    """
     # File handler for all logs with rotation
     logs_dir = Path("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +36,7 @@ def setup_logger(level: str = "DEBUG") -> None:
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         backtrace=True,
         diagnose=True,
-        enqueue=True,  # Thread-safe logging
+        enqueue=False,  # Thread-safe logging
     )
 
     # Separate error log file
@@ -46,8 +48,9 @@ def setup_logger(level: str = "DEBUG") -> None:
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         backtrace=True,
         diagnose=True,
-        enqueue=True,
+        enqueue=False,
     )
+    """
 
-    logger.info(f"Logger initialized with level: {level}")
+    logger.debug(f"Logger initialized with level: {level}")
 
