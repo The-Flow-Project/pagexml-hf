@@ -15,17 +15,22 @@ Input (ZIP / folder / HF dataset)
 ```
 
 - **`XmlParser`** returns *generators* (`parse_zip`, `parse_folder`, `parse_dataset`). The converter stores the generator function + kwargs and replays them via `Dataset.from_generator`.
+- **`XmlConverter`** takes `gen_func` and `gen_kwargs` (not a live generator). It also provides `convert_and_upload()` as a convenience method combining conversion + Hub upload.
 - **`PRE_FEATURES`** (defined in both `converter.py` and `exporters.py`) is the intermediate Arrow schema. Each exporter defines its own **`POST_FEATURES`** — the final HF dataset schema. Feature compatibility is checked before upload when `append=True`.
-- **`ImageProcessor`** (`imageutils.py`) handles EXIF orientation fixes, JPEG encoding, polygon-masked cropping via `scikit-image`.
+- **`ImageProcessor`** (`imageutils.py`) handles EXIF orientation fixes, PNG encoding, polygon-masked cropping via `scikit-image`, and random image augmentation (rotation, dilation, erosion, downscaling) for line-level data augmentation.
+- **`hub_utils.py`** contains several helper classes beyond `HubUploader`: `ProjectGrouper` (groups samples by project), `ReadmeGenerator`/`ReadmeParser` (create/update dataset cards), `YamlGenerator`/`FeatureYamlConverter` (YAML frontmatter for HF Hub). Parquet shards are organized as `data/<split>/<project_name>/<timestamp>-<shard>.parquet`.
 - Dataset caching is explicitly disabled (`disable_caching()` in `converter.py`).
+- `ImageFile.LOAD_TRUNCATED_IMAGES = True` is set globally in `exporters.py` to handle incomplete image files.
 
 ## Key Conventions
 
+- **Python version**: Requires `>=3.10` (uses `X | Y` union syntax throughout).
 - **Logging**: Use `loguru.logger` everywhere (not stdlib `logging`). Logger setup is in `logger.py`; writes to `logs/` directory.
-- **Image format**: All images are stored as `{"bytes": <jpeg_bytes>, "path": None}` dicts matching HF `datasets.Image(decode=False)`.
+- **Image format**: All images are stored as `{"bytes": <png_bytes>, "path": None}` dicts matching HF `datasets.Image(decode=False)`. `ImageProcessor.encode_image()` outputs PNG.
 - **Namespace handling**: PAGE XML namespaces are auto-detected per document via `root.nsmap` in `_parse_page_xml` — never hardcode a namespace URI.
 - **Encoding**: `chardet` is used for fallback encoding detection of XML files (`_decode_bytes` in `parser.py`).
 - **Version**: Single source of truth is `__version__` in `pagexml_hf/__init__.py`, read dynamically by setuptools via `pyproject.toml`.
+- **Line augmentation**: `LineExporter` supports `line_augment` parameter (max 5) to produce random augmented copies per line via `ImageProcessor.random_augment_image()`.
 
 ## Development Workflow
 
@@ -54,7 +59,7 @@ pagexml-hf <source> --mode line --local-only --output-dir ./out
 
 ## Testing Patterns
 
-- Shared fixtures live in `tests/conftest.py` — `sample_xml_content`, `sample_image_bytes`, `sample_dataset_dict` provide reusable PAGE XML and image data.
+- Shared fixtures live in `tests/conftest.py` — `sample_xml_content`, `sample_image_bytes`, `sample_dataset_dict`, `sample_coordinates`, `temp_dir` provide reusable PAGE XML and image data.
 - Tests use `pytest` markers: `slow`, `integration`, `unit`.
 - HF Hub and network calls are mocked (`unittest.mock.patch`); no real uploads in tests.
 - Each module has a matching `tests/test_<module>.py` file.

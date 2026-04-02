@@ -3,6 +3,7 @@ Exporters for converting parsed Transkribus data to different HuggingFace datase
 """
 
 from abc import ABC, abstractmethod
+import json
 
 from PIL import ImageFile
 from datasets import (
@@ -19,40 +20,12 @@ from .imageutils import ImageProcessor
 # Allow loading of truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
-
-PRE_FEATURES = Features(
-    {
-        "image": DatasetImage(decode=False),
-        "xml_content": Value("string"),
-        "filename": Value("string"),
-        "project_name": Value("string"),
-        "image_width": Value("int64"),
-        "image_height": Value("int64"),
-
-        "regions": List(feature={
-            "id": Value("string"),
-            "type": Value("string"),
-            "coords": POLYGON_FEATURE,
-
-            "text_lines": List(feature={
-                "id": Value("string"),
-                "text": Value("string"),
-                "coords": POLYGON_FEATURE,
-                "baseline": POLYGON_FEATURE,
-                "reading_order": Value("int64"),
-                "region_id": Value("string"),
-            }),
-
-            "reading_order": Value("int64"),
-            "full_text": Value("string"),
-        }),
-    }
-)
-
 
 class BaseExporter(ABC):
     """Base class for all exporters."""
+
+    # Used in all exporter classes and in the XmlConverter class.
+    POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
 
     def __init__(
             self,
@@ -218,6 +191,7 @@ class RegionExporter(BaseExporter):
         "region_id": Value("string"),
         "region_reading_order": Value("int32"),
         "region_type": Value("string"),
+        "region_coords": BaseExporter.POLYGON_FEATURE,
         "filename": Value("string"),
         "project_name": Value("string"),
     })
@@ -261,7 +235,11 @@ class RegionExporter(BaseExporter):
                     if not allow_empty and not r.get("full_text"):
                         continue
 
-                    crop_bytes = image_processor.crop_from_image(pil_image, r["coords"])
+                    cropped_image = image_processor.crop_from_image(pil_image, r["coords"])
+                    crop_bytes = None
+
+                    if cropped_image:
+                        crop_bytes = image_processor.encode_image(cropped_image)
 
                     if crop_bytes:
                         out["image"].append({"bytes": crop_bytes, "path": None})
@@ -269,6 +247,7 @@ class RegionExporter(BaseExporter):
                         out["region_id"].append(r["id"])
                         out["region_reading_order"].append(r["reading_order"])
                         out["region_type"].append(r["type"])
+                        out["region_coords"].append(r["coords"])
                         out["filename"].append(batch["filename"][i])
                         out["project_name"].append(batch["project_name"][i])
 
@@ -300,9 +279,13 @@ class LineExporter(BaseExporter):
         "text": Value("string"),
         "line_id": Value("string"),
         "line_reading_order": Value("int64"),
+        "line_coords": BaseExporter.POLYGON_FEATURE,
+        "line_baseline": BaseExporter.POLYGON_FEATURE,
+        "line_augmentation": Value("string"),
         "region_id": Value("string"),
         "region_reading_order": Value("int64"),
         "region_type": Value("string"),
+        "region_coords": BaseExporter.POLYGON_FEATURE,
         "filename": Value("string"),
         "project_name": Value("string"),
     })
@@ -317,6 +300,7 @@ class LineExporter(BaseExporter):
             min_width: int = 0,
             min_height: int = 0,
             allow_empty: bool = False,
+            line_augment: int | None = None,
     ) -> Dataset | None:
         """Export each text line as a separate dataset entry."""
         logger.info(f"Exporting line content with images... (Processed: {len(dataset)})")
@@ -343,18 +327,37 @@ class LineExporter(BaseExporter):
                         if not allow_empty and not line.get("text"):
                             continue
 
-                        crop_bytes = image_processor.crop_from_image(pil_image, line["coords"])
-
-                        if crop_bytes:
-                            out["image"].append({"bytes": crop_bytes, "path": None})
-                            out["text"].append(line.get("text", ""))
-                            out["line_id"].append(line["id"])
-                            out["line_reading_order"].append(line["reading_order"])
-                            out["region_id"].append(line["region_id"])
-                            out["region_reading_order"].append(r["reading_order"])
-                            out["region_type"].append(r["type"])
-                            out["filename"].append(batch["filename"][i])
-                            out["project_name"].append(batch["project_name"][i])
+                        augmented_cropped_images = []
+                        cropped_image = image_processor.crop_from_image(pil_image, line["coords"])
+                        if cropped_image:
+                            augmented_cropped_images.append(
+                                (image_processor.encode_image(cropped_image), {})
+                            )
+                        if line_augment and line_augment > 0 and cropped_image:
+                            for _ in range(line_augment):
+                                augmented_image, config = image_processor.random_augment_image(cropped_image)
+                                if augmented_image:
+                                    augmented_image_bytes = image_processor.encode_image(augmented_image)
+                                    if augmented_image_bytes and \
+                                            not augmented_image_bytes in augmented_cropped_images:
+                                        augmented_cropped_images.append(
+                                            (augmented_image_bytes, json.dumps(config))
+                                        )
+                        for (img, config) in augmented_cropped_images:
+                            if img:
+                                out["image"].append({"bytes": img, "path": None})
+                                out["text"].append(line.get("text", ""))
+                                out["line_id"].append(line["id"])
+                                out["line_reading_order"].append(line["reading_order"])
+                                out["line_coords"].append(line["coords"])
+                                out["line_baseline"].append(line["baseline"])
+                                out["line_augmentation"].append(config if config else "original")
+                                out["region_id"].append(line["region_id"])
+                                out["region_reading_order"].append(r["reading_order"])
+                                out["region_type"].append(r["type"])
+                                out["region_coords"].append(r["coords"])
+                                out["filename"].append(batch["filename"][i])
+                                out["project_name"].append(batch["project_name"][i])
             return out
 
         try:
@@ -461,7 +464,10 @@ class WindowExporter(BaseExporter):
                     if not all_coords:
                         continue
                     logger.debug(f"Length of all coords: {len(all_coords)}")
-                    crop_bytes = image_processor.crop_from_image(pil_image, all_coords)
+                    crop_bytes = None
+                    cropped_image = image_processor.crop_from_image(pil_image, all_coords)
+                    if cropped_image:
+                        crop_bytes = image_processor.encode_image(cropped_image)
                     if crop_bytes:
                         out["image"].append({"bytes": crop_bytes, "path": None})
                         out["text"].append(window_text)

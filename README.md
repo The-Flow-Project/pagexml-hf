@@ -73,6 +73,7 @@ Exports each text region as a separate cropped image.
 - `text`: Region text content
 - `region_type`: Type of region (e.g., "paragraph")
 - `region_id`: Unique region identifier
+- `region_coords`: Polygon of the region mask
 - `reading_order`: Reading order of the region
 - `filename`: Original image filename
 - `project`: Project name
@@ -87,9 +88,13 @@ Exports each text line as a separate cropped image.
 - `text`: Line text content
 - `line_id`: Unique line identifier
 - `line_reading_order`: Reading order within the region
+- `line_coords`: Polygon of the linemask
+- `line_baseline`: Polygon of the baseline
+- `line_augment`: "original" or config dict-as-string
 - `region_id`: Parent region identifier
 - `region_reading_order`: Reading order of parent region
 - `region_type`: Type of parent region
+- `region_coords`: Polygon of the regionmask
 - `filename`: Original image filename
 - `project`: Project name
 

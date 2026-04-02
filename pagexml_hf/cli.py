@@ -209,6 +209,13 @@ def main():
         action="store_true",
         help="Allow empty regions or lines (default: False)",
     )
+
+    parser.add_argument(
+        "--num-augmentation",
+        type=int,
+        default=None,
+        help="Amount of random augmentations to apply on line images (default: None, no augmentations)",
+    )
     # ################ - end region/line mode arguments - ####################
 
     args = parser.parse_args()
@@ -235,13 +242,19 @@ def main():
         logger.error("Error: --repo-id is required unless using --local-only")
         sys.exit(1)
 
-    if args.min_width is not None and args.min_width <= 0:
+    if args.min_width and args.min_width <= 0:
         logger.error("Error: --min-width has to be a positive integer")
         sys.exit(1)
 
-    if args.min_height is not None and args.min_height <= 0:
+    if args.min_height and args.min_height <= 0:
         logger.error("Error: --min-height has to be a positive integer")
         sys.exit(1)
+
+    if args.num_augmentation and args.num_augmentation < 0:
+        logger.error("Error: --num-augmentation has to be a positive integer")
+        sys.exit(1)
+    elif args.num_augmentation and args.mode != "line":
+        logger.warning("Warning: --num-augmentation is ignored since the export mode is not 'line'")
 
     # Validate window parameters
     if args.mode == "window":
@@ -306,6 +319,7 @@ def main():
                 min_width=args.min_width,
                 min_height=args.min_height,
                 allow_empty=args.allow_empty,
+                line_augment=args.num_augmentation,
             )
             logger.debug(f"Converted dataset: {dataset.info}")
 
@@ -345,6 +359,7 @@ def main():
                 min_height=args.min_height,
                 window_size=args.window_size,
                 overlap=args.overlap,
+                line_augment=args.num_augmentation,
             )
             logger.info(f"Success! Dataset available at: {repo_url}")
 
@@ -357,7 +372,9 @@ def main():
             print(f"  Projects: {', '.join(stats['projects'])}")
             if args.mode in ["line", "region", "text", "window"]:
                 print(f"  Total regions: {stats['total_regions']}")
+                print(f"  Total unique regions: {stats['total_unique_regions']}")
                 print(f"  Total lines: {stats['total_lines']}")
+                print(f"  Total unique lines: {stats['total_unique_lines']}")
                 print(f"  Avg regions per page: {stats['avg_regions_per_page']:.1f}")
                 print(f"  Avg lines per page: {stats['avg_lines_per_page']:.1f}")
 

@@ -3,9 +3,10 @@ Imageutils to handle the page/regions/line images more efficient.
 """
 import numpy as np
 import io
+import random
 from typing import List, Tuple
 from skimage import draw
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from loguru import logger
 
@@ -25,6 +26,14 @@ class ImageProcessor:
         self.mask_crop = mask_crop
         self.min_width = min_width
         self.min_height = min_height
+
+        self.augmentation_keys = [
+            "rotation",
+            # "blurring",
+            "dilation",
+            "erosion",
+            "downscaling",
+        ]
 
         logger.debug(f"ImageProcessor initialized")
 
@@ -62,13 +71,13 @@ class ImageProcessor:
         with io.BytesIO() as buffer:
             if image.mode != "RGB":
                 image = image.convert("RGB")
-            image.save(buffer, format="JPEG", quality=95)
+            image.save(buffer, format="PNG")
             return buffer.getvalue()
 
-    def crop_from_image(self, image: Image.Image, coords: List[Tuple[int, int]]) -> bytes | None:
+    def crop_from_image(self, image: Image.Image, coords: List[Tuple[int, int]]) -> Image.Image | None:
         """
         Tool 3: Crops the given image from the given coordinates.
-        Returns JPEG bytes.
+        Returns pillow Image if successful, None otherwise.
         """
         try:
             img_ndarray = np.array(image, dtype=np.uint8)
@@ -96,8 +105,63 @@ class ImageProcessor:
                 mask_img[rr, cc] = 255
                 img_cropped = np.where(mask_img[:, :, None] == 255, img_cropped, 255)
 
-            return self.encode_image(Image.fromarray(img_cropped))
+            return Image.fromarray(img_cropped)
         except Exception as e:
             logger.debug(f"Failed cropping: {e}")
             return None
 
+    def augment_image(self, image: Image.Image, config: dict[str, int | float]) -> Image.Image | None:
+        """
+        Tool 4: Augments the given PIL Image.
+        """
+        try:
+            for key, value in config.items():
+                if key in self.augmentation_keys:
+                    if key == "rotation" and value in range(-10, 10):
+                        image = image.rotate(
+                            value,
+                            resample=Image.BICUBIC,
+                            expand=True,
+                            fillcolor=(255, 255, 255, 255)
+                        ).convert('RGB')
+                    elif key == "blurring":
+                        image = image.filter(ImageFilter.GaussianBlur(radius=value))
+                    elif key == "dilation":
+                        image = image.filter(ImageFilter.MaxFilter(size=value))
+                    elif key == "erosion":
+                        image = image.filter(ImageFilter.MinFilter(size=value))
+                    elif key == "downscaling" and value in range(1, 4):
+                        w, h = image.size
+                        new_size = (w // value, h // value)
+                        image = image.resize(new_size, resample=Image.LANCZOS)
+                else:
+                    continue
+            return image
+        except Exception as e:
+            logger.debug(f"Failed augmenting: {e}")
+            return None
+
+    def random_augment_image(self, image: Image.Image) -> tuple[Image.Image | None, dict]:
+        """
+        Tool 5: Randomly Augments the given PIL Image.
+        """
+        num_to_choose = random.randint(1, min(len(self.augmentation_keys), 2))  # max two filters
+        selected = random.sample(self.augmentation_keys, num_to_choose)
+        config = {}
+        dil_er_done = False  # do either dilation or erosion, not both
+
+        for i in selected:
+            if i == "rotation":
+                angle = random.randint(-10, 10)
+                config[i] = angle if angle != 0 else 3
+            elif (i == "dilation" or i == "erosion") and not dil_er_done:
+                config[i] = 3  # more than 3 is too much
+                dil_er_done = True
+            elif i == "downscaling":
+                config[i] = random.choice([2, 3])
+
+        if random.choice([True, False]):  # add blurring with 50% chance
+            config["blurring"] = 0.2
+
+        logger.debug(f"Augmenting image with augmentations: {list(config.keys())}")
+        return self.augment_image(image, config), config

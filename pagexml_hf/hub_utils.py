@@ -43,6 +43,7 @@ class HubUploader:
             private: bool = False,
             commit_message: str | None = None,
             append: bool = False,
+            number_of_augmentations: int | None = None,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub using parquet shards.
@@ -54,7 +55,7 @@ class HubUploader:
             private: Whether to make the repo private
             commit_message: Custom commit message
             append: If True, add as new parquet shard. If False, overwrite.
-
+            number_of_augmentations: Number of augmentations created
         Returns:
             Repository URL
         """
@@ -87,6 +88,7 @@ class HubUploader:
             commit_message=commit_message,
             append=append,
             dataset_repo_exists=dataset_repo_exists,
+            number_of_augmentations=number_of_augmentations,
         )
 
     @staticmethod
@@ -172,6 +174,7 @@ class HubUploader:
             commit_message: str,
             append: bool,
             dataset_repo_exists: bool,
+            number_of_augmentations: int | None = None,
     ) -> str:
         """Upload dataset as parquet shards organized by project."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -239,6 +242,7 @@ class HubUploader:
                 all_projects=list(all_projects),
                 append=append,
                 dataset_repo_exists=dataset_repo_exists,
+                number_of_augmentations=number_of_augmentations,
             )
 
         repo_url = f"https://huggingface.co/datasets/{repo_id}"
@@ -322,6 +326,7 @@ class ReadmeGenerator:
             all_projects: list,
             append: bool,
             dataset_repo_exists: bool,
+            number_of_augmentations: int | None = None,
     ) -> None:
         """Create or update README.md with dataset card configuration."""
         try:
@@ -396,6 +401,7 @@ class ReadmeGenerator:
                 total_samples=total_samples,
                 approx_total_size_mb=approx_total_size_mb,
                 features=features,
+                number_of_augmentations=number_of_augmentations,
             )
 
             # Upload README
@@ -429,6 +435,7 @@ class ReadmeGenerator:
             total_samples: int,
             approx_total_size_mb: float,
             features: Features,
+            number_of_augmentations: int | None = None,
     ) -> str:
         """Build README content."""
         # Always generate fresh content with updated statistics
@@ -460,7 +467,12 @@ This dataset contains {total_samples:,} samples across {len(total_splits_info)} 
 
 - Approximate total size: {approx_total_size_mb:,.2f} MB
 - Total samples: {total_samples:,}
-
+"""
+        if number_of_augmentations:
+            readme += f"""
+- Number of augmentations: {number_of_augmentations:,}
+"""
+        readme += f"""
 ### Features
 
 """

@@ -278,5 +278,105 @@ Test line 2</Unicode>
         assert line.reading_order == 0  # Default value
 
 
+class TestUnicodeNormalization:
+    """Test cases for Unicode NFC normalization of strings."""
+
+    @pytest.fixture
+    def parser(self):
+        """Create XmlParser instance."""
+        return XmlParser()
+
+    def test_normalize_str_nfc_idempotent(self, parser):
+        """NFC input stays unchanged."""
+        nfc = "Pr\u00fcfung"  # ü as single codepoint
+        assert parser._normalize_str(nfc) == nfc
+
+    def test_normalize_str_nfd_to_nfc(self, parser):
+        """NFD input (u + combining diaeresis) is normalised to NFC."""
+        import unicodedata
+        nfd = unicodedata.normalize("NFD", "Pr\u00fcfung")  # u + U+0308
+        result = parser._normalize_str(nfd)
+        assert result == "Pr\u00fcfung"
+        assert len(result) < len(nfd)  # NFC is shorter
+
+    def test_normalize_str_non_string(self, parser):
+        """Non-string values are returned as-is."""
+        assert parser._normalize_str(None) is None
+        assert parser._normalize_str(42) == 42
+
+    def test_normalize_str_ascii(self, parser):
+        """Plain ASCII strings are unaffected."""
+        assert parser._normalize_str("hello") == "hello"
+
+    def test_normalize_str_multiple_special_chars(self, parser):
+        """Multiple special characters are all normalised."""
+        import unicodedata
+        nfd = unicodedata.normalize("NFD", "\u00e4\u00f6\u00fc\u00df")  # äöüß
+        result = parser._normalize_str(nfd)
+        assert result == "\u00e4\u00f6\u00fc\u00df"
+
+    def test_parse_page_xml_normalizes_filename(self, parser):
+        """imageFilename from XML is NFC-normalised."""
+        import unicodedata
+        nfd_name = unicodedata.normalize("NFD", "Br\u00fccke.jpg")
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15">
+    <Page imageFilename="{nfd_name}" imageWidth="100" imageHeight="100">
+    </Page>
+</PcGts>"""
+        page_data = parser._parse_page_xml(xml)
+        assert page_data is not None
+        assert page_data["image_filename"] == "Br\u00fccke.jpg"
+
+    def test_parse_page_xml_with_non_utf8_encoding_declaration(self, parser):
+        """XML with non-UTF-8 encoding declaration is parsed correctly."""
+        xml = '<?xml version="1.0" encoding="windows-1252"?>\n' \
+              '<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15">\n' \
+              '    <Page imageFilename="Pr\u00fcfung.jpg" imageWidth="100" imageHeight="100">\n' \
+              '        <TextRegion type="paragraph" id="r1">\n' \
+              '            <Coords points="0,0 100,0 100,100 0,100"/>\n' \
+              '            <TextEquiv><Unicode>Pr\u00fcfungstext</Unicode></TextEquiv>\n' \
+              '        </TextRegion>\n' \
+              '    </Page>\n' \
+              '</PcGts>'
+        page_data = parser._parse_page_xml(xml)
+        assert page_data is not None
+        assert page_data["image_filename"] == "Pr\u00fcfung.jpg"
+        assert page_data["regions"][0]["full_text"] == "Pr\u00fcfungstext"
+
+    def test_parse_dataset_normalizes_project_name(self, parser):
+        """parse_dataset normalises project_name from input dataset items."""
+        import unicodedata
+        from datasets import Dataset
+
+        nfd_project = unicodedata.normalize("NFD", "Pr\u00fcfung_Projekt")
+        nfd_filename = unicodedata.normalize("NFD", "Br\u00fccke.jpg")
+
+        xml_content = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15">'
+            f'<Page imageFilename="{nfd_filename}" imageWidth="100" imageHeight="100">'
+            '</Page></PcGts>'
+        )
+
+        from PIL import Image
+        import io as _io
+        img = Image.new("RGB", (100, 100), color="white")
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG")
+        img_bytes = buf.getvalue()
+
+        ds = Dataset.from_dict({
+            "xml_content": [xml_content],
+            "project_name": [nfd_project],
+            "image": [{"bytes": img_bytes, "path": None}],
+        })
+
+        rows = list(parser.parse_dataset(dataset=ds, parse_xml=False))
+        assert len(rows) == 1
+        assert rows[0]["project_name"] == "Pr\u00fcfung_Projekt"
+        assert rows[0]["filename"] == "Br\u00fccke.jpg"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

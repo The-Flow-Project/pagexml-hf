@@ -73,5 +73,8 @@ Repository = "https://github.com/The-Flow-Project/pagexml-hf"
 [tool.uv]
 package = true
 
+[tool.setuptools.packages.find]
+include = ["pagexml_hf*"]
+
 [tool.setuptools.dynamic]
 version = { attr = "pagexml_hf.__version__" }
