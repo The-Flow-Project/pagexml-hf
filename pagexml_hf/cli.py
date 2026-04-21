@@ -321,7 +321,9 @@ def main():
                 allow_empty=args.allow_empty,
                 line_augment=args.num_augmentation,
             )
-            logger.debug(f"Converted dataset: {dataset.info}")
+            dataset_info = getattr(dataset, "info", None)
+            if dataset_info:
+                logger.debug(f"Converted dataset: {dataset_info}")
 
             # Save locally
             mode_suffix = f"_{args.mode}"

@@ -212,10 +212,7 @@ class XmlConverter:
         # Load existing dataset features
         try:
             existing_ds = load_dataset(repo_id, split="train", streaming=True)
-            existing_features = None
-            for _ in existing_ds:
-                existing_features = existing_ds.features
-                break
+            existing_features = getattr(existing_ds, "features", None)
 
             if existing_features:
                 if str(expected_features) != str(existing_features):
@@ -243,15 +240,15 @@ class XmlConverter:
             window_size: int = 2,
             overlap: int = 0,
             batch_size: int = 32,
-            split_train: float | None = None,
-            split_seed: int | None = 42,
-            split_shuffle: bool | None = False,
-            mask_crop: bool | None = False,
-            min_width: int | None = None,
-            min_height: int | None = None,
-            allow_empty: bool | None = False,
-            line_augment: int | None = None,
-    ) -> Dataset:
+            split_train: float = 1.0,
+            split_seed: int = 42,
+            split_shuffle: bool = False,
+            mask_crop: bool = False,
+            min_width: int = 0,
+            min_height: int = 0,
+            allow_empty: bool = False,
+            line_augment: int = 0,
+    ) -> Dataset | DatasetDict:
         """
         Convert parsed data to a HuggingFace dataset.
 
@@ -303,7 +300,7 @@ class XmlConverter:
         if export_mode == "line":
             if line_augment and line_augment < 0:
                 logger.debug("Line augmentation disabled")
-                line_augment = None
+                line_augment = 0
             if line_augment and line_augment > 5:
                 logger.debug("Reduce amount of line augmentation to 5")
                 line_augment = 5
@@ -328,16 +325,14 @@ class XmlConverter:
         else:
             dataset = self.exporter.process_dataset(dataset=base_dataset)
 
-        if self.stats_cache is None:
+        if dataset and self.stats_cache is None:
             logger.debug("Computing statistics...")
             self._compute_stats(dataset)
 
         logger.info(f"Exported dataset")
 
-        if split_train is not None:
+        if dataset and split_train and 0.0 < split_train < 1.0:
             logger.info(f"Splitting dataset into train and test sets (train size={split_train})...")
-            if not 0.0 < split_train < 1.0:
-                raise ValueError("split_train must be between 0 and 1")
             dataset = dataset.train_test_split(
                 train_size=split_train,
                 shuffle=split_shuffle,
@@ -356,11 +351,11 @@ class XmlConverter:
             self,
             dataset: Dataset | DatasetDict,
             repo_id: str,
-            token: str | None = None,
+            token: str = "",
             private: bool = False,
-            commit_message: str | None = None,
+            commit_message: str = "Dataset created by pagexml-hf",
             append: bool = False,
-            number_of_augmentations: int | None = None,
+            number_of_augmentations: int = 0,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub using parquet shards (memory efficient).
@@ -414,21 +409,21 @@ class XmlConverter:
             self,
             repo_id: str,
             export_mode: str = "text",
-            token: str | None = None,
+            token: str = "",
             private: bool = False,
-            commit_message: str | None = None,
+            commit_message: str = "Add new data export",
             batch_size: int = 32,
-            mask_crop: bool | None = False,
-            min_width: int | None = None,
-            min_height: int | None = None,
-            allow_empty: bool | None = False,
+            mask_crop: bool = False,
+            min_width: int = 0,
+            min_height: int = 0,
+            allow_empty: bool = False,
             window_size: int = 2,
             overlap: int = 0,
-            split_train: float | None = None,
-            split_seed: int | None = 42,
-            split_shuffle: bool | None = False,
+            split_train: float = 1.0,
+            split_seed: int = 42,
+            split_shuffle: bool = False,
             append: bool = False,
-            line_augment: int | None = None,
+            line_augment: int = 0,
     ) -> str:
         """
         Convert and upload in one step using parquet shards (memory efficient).

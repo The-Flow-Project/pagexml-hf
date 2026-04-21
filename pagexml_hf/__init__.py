@@ -13,7 +13,7 @@ from .exporters import (
 )
 from .logger import setup_logger
 
-LOGGING_LEVEL = "INFO"
+LOGGING_LEVEL = "DEBUG"
 setup_logger(LOGGING_LEVEL)
 
 __version__ = "0.9.2+fork.1"

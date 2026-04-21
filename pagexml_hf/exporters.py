@@ -117,6 +117,7 @@ class TextExporter(BaseExporter):
         """Export pages as image + full text pairs."""
 
         logger.info(f"Exporting text content with images... (Parsed {len(dataset)} pages)")
+        failed: bool = False
 
         def process_batch(batch):
             """
@@ -177,8 +178,11 @@ class TextExporter(BaseExporter):
             logger.info(f"Text Dataset prepared")
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
-            dataset = None
+            failed = True
 
+        if failed:
+            logger.warning(f"No success creating dataset; return None.")
+            return None
         return dataset
 
 
@@ -210,6 +214,7 @@ class RegionExporter(BaseExporter):
         """Export each region as a separate dataset entry."""
 
         logger.info(f"Exporting Region XML content with images... (Processed: {len(dataset)})")
+        failed: bool = False
 
         image_processor = ImageProcessor(
             mask_crop=mask,
@@ -266,8 +271,11 @@ class RegionExporter(BaseExporter):
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
-            dataset = None
+            failed = True
 
+        if failed:
+            logger.warning(f"No success creating dataset; return None.")
+            return None
         return dataset
 
 
@@ -300,10 +308,11 @@ class LineExporter(BaseExporter):
             min_width: int = 0,
             min_height: int = 0,
             allow_empty: bool = False,
-            line_augment: int | None = None,
+            line_augment: int = 0,
     ) -> Dataset | None:
         """Export each text line as a separate dataset entry."""
         logger.info(f"Exporting line content with images... (Processed: {len(dataset)})")
+        failed: bool = False
 
         image_processor = ImageProcessor(
             mask_crop=mask,
@@ -372,8 +381,11 @@ class LineExporter(BaseExporter):
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
-            dataset = None
+            failed = True
 
+        if failed:
+            logger.warning(f"No success creating dataset; return None.")
+            return None
         return dataset
 
 
@@ -423,6 +435,7 @@ class WindowExporter(BaseExporter):
     ) -> Dataset | None:
         """Export sliding windows of lines as separate dataset entries."""
         logger.info(f"Exporting window content with images (processed: {len(dataset)}).")
+        failed: bool = False
 
         image_processor = ImageProcessor(mask_crop=mask)
 
@@ -494,6 +507,9 @@ class WindowExporter(BaseExporter):
             )
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
-            dataset = None
+            failed = True
 
+        if failed:
+            logger.warning(f"No success creating dataset; return None.")
+            return None
         return dataset

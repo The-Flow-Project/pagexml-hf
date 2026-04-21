@@ -39,11 +39,11 @@ class HubUploader:
             self,
             dataset: Dataset | DatasetDict,
             repo_id: str,
-            token: str | None = None,
+            token: str = "",
             private: bool = False,
-            commit_message: str | None = None,
+            commit_message: str = "Data export with pagexml-hf",
             append: bool = False,
-            number_of_augmentations: int | None = None,
+            number_of_augmentations: int = 0,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub using parquet shards.
@@ -197,6 +197,7 @@ class HubUploader:
 
             # Process each split
             for split_name, split_dataset in dataset_dict.items():
+                split_name = str(split_name)
                 logger.info(f"Processing split '{split_name}'...")
 
                 # Group by project_name

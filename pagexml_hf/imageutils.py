@@ -80,6 +80,8 @@ class ImageProcessor:
         Returns pillow Image if successful, None otherwise.
         """
         try:
+            logger.debug("Cropping image")
+            logger.debug(f"Size: {image.size}")
             img_ndarray = np.array(image, dtype=np.uint8)
 
             x_coords = [pt[0] for pt in coords]
@@ -101,6 +103,12 @@ class ImageProcessor:
                 mask_img = np.zeros((img_cropped.shape[0], img_cropped.shape[1]))
                 y_coords_shifted = [y for (x, y) in shifted_coords]
                 x_coords_shifted = [x for (x, y) in shifted_coords]
+                logger.debug(
+                    f"Mask crop: shape={mask_img.shape}, "
+                    f"x_range=[{min(x_coords_shifted)},{max(x_coords_shifted)}], "
+                    f"y_range=[{min(y_coords_shifted)},{max(y_coords_shifted)}], "
+                    f"n_points={len(shifted_coords)}"
+                )
                 rr, cc = draw.polygon(y_coords_shifted, x_coords_shifted, shape=mask_img.shape)
                 mask_img[rr, cc] = 255
                 img_cropped = np.where(mask_img[:, :, None] == 255, img_cropped, 255)
@@ -115,27 +123,33 @@ class ImageProcessor:
         Tool 4: Augments the given PIL Image.
         """
         try:
+            # Ensure RGB mode before augmenting
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
             for key, value in config.items():
-                if key in self.augmentation_keys:
-                    if key == "rotation" and value in range(-10, 10):
-                        image = image.rotate(
-                            value,
-                            resample=Image.BICUBIC,
-                            expand=True,
-                            fillcolor=(255, 255, 255, 255)
-                        ).convert('RGB')
-                    elif key == "blurring":
-                        image = image.filter(ImageFilter.GaussianBlur(radius=value))
-                    elif key == "dilation":
-                        image = image.filter(ImageFilter.MaxFilter(size=value))
-                    elif key == "erosion":
-                        image = image.filter(ImageFilter.MinFilter(size=value))
-                    elif key == "downscaling" and value in range(1, 4):
-                        w, h = image.size
-                        new_size = (w // value, h // value)
-                        image = image.resize(new_size, resample=Image.LANCZOS)
-                else:
+                if key not in self.augmentation_keys:
                     continue
+
+                if key == "rotation" and -10 <= value <= 10:
+                    value = float(value)
+                    image = image.rotate(
+                        value,
+                        resample=Image.BICUBIC,
+                        expand=True,
+                        fillcolor=(255, 255, 255),
+                    )
+                elif key == "blurring":
+                    image = image.filter(ImageFilter.GaussianBlur(radius=value))
+                elif key == "dilation":
+                    image = image.filter(ImageFilter.MaxFilter(size=int(value)))
+                elif key == "erosion":
+                    image = image.filter(ImageFilter.MinFilter(size=int(value)))
+                elif key == "downscaling" and 1 < value <= 4:
+                    w, h = image.size
+                    new_w, new_h = max(1, w // int(value)), max(1, h // int(value))
+                    image = image.resize((new_w, new_h), resample=Image.LANCZOS)
+
             return image
         except Exception as e:
             logger.debug(f"Failed augmenting: {e}")
@@ -152,8 +166,8 @@ class ImageProcessor:
 
         for i in selected:
             if i == "rotation":
-                angle = random.randint(-10, 10)
-                config[i] = angle if angle != 0 else 3
+                angle = random.choice([a for a in range(-10, 11) if a != 0])
+                config[i] = angle
             elif (i == "dilation" or i == "erosion") and not dil_er_done:
                 config[i] = 3  # more than 3 is too much
                 dil_er_done = True
