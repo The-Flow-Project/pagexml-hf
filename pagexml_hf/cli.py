@@ -226,11 +226,11 @@ def main():
 
     source_path, source_type = args.source_path
 
-    logger.remove()
+    # Only write to logs files, when used by another library - not in CLI usage
     if args.debug:
-        setup_logger()  # Set to DEBUG level
+        setup_logger()  # log_files=False, level=DEBUG
     else:
-        setup_logger("INFO")
+        setup_logger("INFO")  # log_files=False, level=INFO
 
     logger.info("Process started via CLI")
     logger.info("Source path: {}".format(source_path))

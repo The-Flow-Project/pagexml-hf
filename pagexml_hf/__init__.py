@@ -13,9 +13,6 @@ from .exporters import (
 )
 from .logger import setup_logger
 
-LOGGING_LEVEL = "DEBUG"
-setup_logger(LOGGING_LEVEL)
-
 __version__ = "0.9.2+fork.1"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "jnswidmer"]
@@ -28,4 +25,5 @@ __all__ = [
     "RegionExporter",
     "LineExporter",
     "WindowExporter",
+    "setup_logger",
 ]
