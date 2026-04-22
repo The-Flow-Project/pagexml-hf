@@ -286,35 +286,6 @@ class TestUnicodeNormalization:
         """Create XmlParser instance."""
         return XmlParser()
 
-    def test_normalize_str_nfc_idempotent(self, parser):
-        """NFC input stays unchanged."""
-        nfc = "Pr\u00fcfung"  # ü as single codepoint
-        assert parser._normalize_str(nfc) == nfc
-
-    def test_normalize_str_nfd_to_nfc(self, parser):
-        """NFD input (u + combining diaeresis) is normalised to NFC."""
-        import unicodedata
-        nfd = unicodedata.normalize("NFD", "Pr\u00fcfung")  # u + U+0308
-        result = parser._normalize_str(nfd)
-        assert result == "Pr\u00fcfung"
-        assert len(result) < len(nfd)  # NFC is shorter
-
-    def test_normalize_str_non_string(self, parser):
-        """Non-string values are returned as-is."""
-        assert parser._normalize_str(None) is None
-        assert parser._normalize_str(42) == 42
-
-    def test_normalize_str_ascii(self, parser):
-        """Plain ASCII strings are unaffected."""
-        assert parser._normalize_str("hello") == "hello"
-
-    def test_normalize_str_multiple_special_chars(self, parser):
-        """Multiple special characters are all normalised."""
-        import unicodedata
-        nfd = unicodedata.normalize("NFD", "\u00e4\u00f6\u00fc\u00df")  # äöüß
-        result = parser._normalize_str(nfd)
-        assert result == "\u00e4\u00f6\u00fc\u00df"
-
     def test_parse_page_xml_normalizes_filename(self, parser):
         """imageFilename from XML is NFC-normalised."""
         import unicodedata

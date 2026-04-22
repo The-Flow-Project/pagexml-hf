@@ -5,7 +5,6 @@ Parser for Transkribus ZIP files and PAGE XML format.
 import io
 import os
 import re
-import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,18 +52,6 @@ class XmlParser:
     def __init__(self):
         logger.info(f"Initializing XmlParser")
 
-    @staticmethod
-    def _normalize_str(s: str) -> str:
-        """
-        Normalize a Unicode string to NFC (composed) form.
-        macOS APFS stores filenames in NFD (decomposed) form, which can cause
-        display issues in downstream tools (e.g. 'ü' as u+combining diaeresis).
-        NFC is the standard form expected by most applications.
-        """
-        if isinstance(s, str):
-            return unicodedata.normalize("NFC", s)
-        return s
-
     def parse_zip(self, zip_path: str, parse_xml: bool = False):
         """
         Generator to parse a Transkribus ZIP file and extract all page data.
@@ -83,7 +70,7 @@ class XmlParser:
                 response = requests.get(zip_path, timeout=30)
                 response.raise_for_status()
                 zip_data_io = io.BytesIO(response.content)
-                zip_file = zipfile.ZipFile(zip_data_io)
+                zip_file = zipfile.ZipFile(zip_data_io, metadata_encoding='utf-8')
             except requests.exceptions.Timeout as e:
                 raise ValueError(f"Download from {zip_path} timed out: {e}") from e
             except requests.exceptions.RequestException as e:
@@ -128,7 +115,7 @@ class XmlParser:
                 row["xml_content"] = xml_content
                 parent = xml_filename.parent
                 project_name = parent.name if parent.name != "page" else parent.parent.name
-                row["project_name"] = self._normalize_str(project_name)
+                row["project_name"] = project_name
 
                 # Find the matching image in the file list
                 imagepath = next((i for i in image_files if i.stem in str(xml_filename)), None)
@@ -147,9 +134,9 @@ class XmlParser:
                     if imagepath is None and "image_url" in page_data:
                         img_bytes = self._get_image_from_url(page_data["image_url"])
                         row["image"] = {"bytes": img_bytes, "path": None}
-                        row["filename"] = self._normalize_str(page_data["image_filename"])
+                        row["filename"] = page_data["image_filename"]
                     else:
-                        row["filename"] = self._normalize_str(imagepath.name)
+                        row["filename"] = imagepath.name
 
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
@@ -161,7 +148,7 @@ class XmlParser:
                     try:
                         img_bytes = zip_file.read(str(imagepath))
                         row["image"] = {"bytes": img_bytes, "path": None}
-                        row["filename"] = self._normalize_str(imagepath.name)
+                        row["filename"] = imagepath.name
                     except Exception as e:
                         logger.error(f"Failed to attach image: {e}")
                         continue
@@ -216,7 +203,7 @@ class XmlParser:
             # Extract project name
             parent = xml_filename.parent
             project_name = parent.name if parent.name != "page" else parent.parent.name
-            row["project_name"] = self._normalize_str(project_name)
+            row["project_name"] = project_name
 
             imagepath = next((i.absolute() for i in image_files if i.stem in str(xml_filename)), None)
             row["image"] = None
@@ -230,9 +217,9 @@ class XmlParser:
                         row["image_height"] = page_data["image_height"]
                     if imagepath is None:
                         row["image"] = self._get_image_from_url(page_data["image_url"])
-                        row["filename"] = self._normalize_str(page_data["image_filename"])
+                        row["filename"] = page_data["image_filename"]
                     else:
-                        row["filename"] = self._normalize_str(imagepath.name)
+                        row["filename"] = imagepath.name
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
                     continue
@@ -241,7 +228,7 @@ class XmlParser:
                 try:
                     with open(imagepath, "rb") as f:
                         row["image"] = f.read()
-                    row["filename"] = self._normalize_str(imagepath.name)
+                    row["filename"] = imagepath.name
                 except Exception as e:
                     logger.error(f"Failed to attach image: {e}")
                     continue
@@ -296,7 +283,7 @@ class XmlParser:
 
             row["xml_content"] = xml_content
             raw_project = item.get("project_name", "unknown_project")
-            row["project_name"] = self._normalize_str(raw_project)
+            row["project_name"] = raw_project
             logger.debug(
                 f"project_name: raw={ascii(raw_project)} "
                 f"-> normalized={ascii(row['project_name'])}"
@@ -326,7 +313,7 @@ class XmlParser:
                     logger.error(f"Failed to process image bytes: {e}")
                     continue
 
-                row["filename"] = self._normalize_str(page_data["image_filename"])
+                row["filename"] = page_data["image_filename"]
 
                 if parse_xml:
                     row["regions"] = page_data["regions"]
@@ -443,9 +430,7 @@ class XmlParser:
                 return None
 
             # Extract page metadata
-            image_filename = self._normalize_str(
-                page_elem.get("imageFilename", "")
-            )
+            image_filename = page_elem.get("imageFilename", "")
             image_width = int(page_elem.get("imageWidth", 0))
             image_height = int(page_elem.get("imageHeight", 0))
             image_url = self._parse_imgurl(root)
