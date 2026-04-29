@@ -282,7 +282,12 @@ class HubUploader:
                 f"Saving split '{split_name}', project '{project_name}', "
                 f"shard {shard_idx + 1}/{num_shards} ({len(shard_dataset)} samples)..."
             )
-            shard_dataset.to_parquet(str(parquet_file))
+            # Target ~250 MB per row group to stay well under the 300 MB limit
+            target_row_group_bytes = 250 * 1024 * 1024
+            estimated_row_bytes = shard_dataset.data.nbytes / max(len(shard_dataset), 1)
+            batch_size = max(1, int(target_row_group_bytes / estimated_row_bytes))
+
+            shard_dataset.to_parquet(str(parquet_file), batch_size=batch_size)
             logger.info(f"✓ Saved shard {shard_idx + 1}/{num_shards}")
 
 

@@ -13,7 +13,7 @@ from .exporters import (
 )
 from .logger import setup_logger
 
-__version__ = "0.9.2+fork.1"
+__version__ = "0.9.3+fork.1"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "jnswidmer"]
 

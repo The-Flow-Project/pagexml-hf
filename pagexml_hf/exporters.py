@@ -66,6 +66,9 @@ class RawXMLExporter(BaseExporter):
             out_images = []
             for img_entry in batch["image"]:
                 image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                if image is None:
+                    logger.warning("Skipping image due to load failure")
+                    continue
                 final_bytes = image_processor.encode_image(image)
                 out_images.append({"bytes": final_bytes, "path": None})
 

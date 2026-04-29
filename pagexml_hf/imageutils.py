@@ -38,7 +38,7 @@ class ImageProcessor:
         logger.debug(f"ImageProcessor initialized")
 
     @staticmethod
-    def load_and_fix_orientation(image_bytes: bytes) -> Image.Image:
+    def load_and_fix_orientation(image_bytes: bytes) -> Image.Image | None:
         """
         Tool 1: Loads bytes and returns PIL Image with fixed orientation
         """
@@ -50,18 +50,17 @@ class ImageProcessor:
 
             if orientation in [3, 6, 8]:
                 image = image.convert("RGB")
-                if orientation == 3:
-                    image = image.rotate(180, expand=True)
-                elif orientation == 6:
-                    image = image.rotate(270, expand=True)
-                elif orientation == 8:
-                    image = image.rotate(90, expand=True)
+                transpose_map = {
+                    3: Image.Transpose.ROTATE_180,
+                    6: Image.Transpose.ROTATE_270,
+                    8: Image.Transpose.ROTATE_90,
+                }
+                image = image.transpose(transpose_map[orientation])
 
             return image
-
         except Exception as e:
             logger.debug(f"Warning: Error loading image: {image_bytes}: {e}")
-            return Image.open(io.BytesIO(image_bytes))
+            return None
 
     @staticmethod
     def encode_image(image: Image.Image) -> bytes:
