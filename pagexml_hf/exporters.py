@@ -347,11 +347,18 @@ class LineExporter(BaseExporter):
                             )
                         if line_augment and line_augment > 0 and cropped_image:
                             for _ in range(line_augment):
-                                augmented_image, config = image_processor.random_augment_image(cropped_image)
+                                unique = False
+                                augmented_image = None
+                                config = {}
+
+                                while not unique:
+                                    augmented_image, config = image_processor.random_augment_image(cropped_image)
+                                    config_str = json.dumps(config)
+                                    if config_str not in [c for _, c in augmented_cropped_images]:
+                                        unique = True
                                 if augmented_image:
                                     augmented_image_bytes = image_processor.encode_image(augmented_image)
-                                    if augmented_image_bytes and \
-                                            not augmented_image_bytes in augmented_cropped_images:
+                                    if augmented_image_bytes:
                                         augmented_cropped_images.append(
                                             (augmented_image_bytes, json.dumps(config))
                                         )
