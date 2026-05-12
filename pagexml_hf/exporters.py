@@ -2,19 +2,14 @@
 Exporters for converting parsed Transkribus data to different HuggingFace dataset formats.
 """
 
-from abc import ABC, abstractmethod
 import json
+from abc import ABC, abstractmethod
 
-from PIL import ImageFile
-from datasets import (
-    Dataset,
-    Features,
-    Value,
-    Image as DatasetImage,
-    List
-)
-
+from datasets import Dataset, Features, List, Value
+from datasets import Image as DatasetImage
 from loguru import logger
+from PIL import ImageFile
+
 from .imageutils import ImageProcessor
 
 # Allow loading of truncated images
@@ -26,10 +21,11 @@ class BaseExporter(ABC):
 
     # Used in all exporter classes and in the XmlConverter class.
     POLYGON_FEATURE = List(feature=List(feature=Value("int64")))
+    POST_FEATURES = None
 
     def __init__(
-            self,
-            batch_size: int = 32,
+        self,
+        batch_size: int = 32,
     ):
         self.batch_size: int = batch_size
 
@@ -55,7 +51,9 @@ class RawXMLExporter(BaseExporter):
 
     def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + raw XML pairs."""
-        logger.info(f"Exporting raw XML content with images... (number of pages: {len(dataset)})")
+        logger.info(
+            f"Exporting raw XML content with images... (number of pages: {len(dataset)})"
+        )
 
         image_processor = ImageProcessor()
 
@@ -79,7 +77,7 @@ class RawXMLExporter(BaseExporter):
                 "project_name": batch["project_name"],
             }
 
-        logger.debug(f"Start mapping for orientation correction")
+        logger.debug("Start mapping for orientation correction")
         try:
             dataset = dataset.map(
                 map_raw,
@@ -94,7 +92,7 @@ class RawXMLExporter(BaseExporter):
             logger.debug(dataset.info)
             logger.debug(dataset.features)
 
-            logger.info(f"Raw XML dataset prepared")
+            logger.info("Raw XML dataset prepared")
         except Exception as e:
             logger.error(f"Error preparing raw XML dataset: {e}")
             raise e
@@ -119,54 +117,48 @@ class TextExporter(BaseExporter):
     def process_dataset(self, dataset: Dataset) -> Dataset | None:
         """Export pages as image + full text pairs."""
 
-        logger.info(f"Exporting text content with images... (Parsed {len(dataset)} pages)")
+        logger.info(
+            f"Exporting text content with images... (Parsed {len(dataset)} pages)"
+        )
         failed: bool = False
+        image_processor = ImageProcessor()
 
         def process_batch(batch):
             """
             Generator for dataset creation.
             """
-            image_processor = ImageProcessor()
+            out = {k: [] for k in self.POST_FEATURES}
 
-            output_images = []
-            output_texts = []
-
-            logger.debug(f"Start mapping to add full_text")
+            logger.debug("Start mapping to add full_text")
 
             for i in range(len(batch["image"])):
+                # ------- Handle Image Orientation ------
+                img_entry = batch["image"][i]
+                pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                if pil_image is None:
+                    logger.warning("Skipping page due to image load failure")
+                    continue
+
                 # ------ Text Extraction ------
                 regions_list = batch["regions"][i]
-
-                if regions_list and len(regions_list) > 0:
-                    page_text_parts = []
-                    for r in regions_list:
-                        txt = r.get("full_text")
-                        if txt:
-                            page_text_parts.append(txt)
-
-                    full_text = '\n'.join(page_text_parts)
+                if regions_list:
+                    page_text_parts = [
+                        r.get("full_text") for r in regions_list if r.get("full_text")
+                    ]
+                    full_text = "\n".join(page_text_parts)
                 else:
                     full_text = ""
 
-                output_texts.append(full_text)
+                final_bytes = image_processor.encode_image(pil_image)
+                out["image"].append({"bytes": final_bytes, "path": None})
+                out["text"].append(full_text)
+                out["filename"].append(batch["filename"][i])
+                out["project_name"].append(batch["project_name"][i])
 
-                # ------- Handle Image Orientation ------
-                img_entry = batch["image"][i]
-                original_bytes = img_entry["bytes"]
-                final_bytes = image_processor.load_and_fix_orientation(original_bytes)
-                final_bytes = image_processor.encode_image(final_bytes)
-
-                output_images.append({"bytes": final_bytes, "path": None})
-
-            return {
-                "image": output_images,
-                "text": output_texts,
-                "filename": batch["filename"],
-                "project_name": batch["project_name"],
-            }
+            return out
 
         try:
-            logger.debug(f"Map the provided dataset.")
+            logger.debug("Map the provided dataset.")
             dataset = dataset.map(
                 process_batch,
                 batched=True,
@@ -178,13 +170,13 @@ class TextExporter(BaseExporter):
             )
             logger.debug(dataset.info)
             logger.debug(dataset.features)
-            logger.info(f"Text Dataset prepared")
+            logger.info("Text Dataset prepared")
         except Exception as e:
             logger.error(f"Error creating dataset: {e}")
             failed = True
 
         if failed:
-            logger.warning(f"No success creating dataset; return None.")
+            logger.warning("No success creating dataset; return None.")
             return None
         return dataset
 
@@ -192,31 +184,35 @@ class TextExporter(BaseExporter):
 class RegionExporter(BaseExporter):
     """Export individual regions as separate images with metadata."""
 
-    POST_FEATURES = Features({
-        "image": DatasetImage(decode=False),
-        "text": Value("string"),
-        "region_id": Value("string"),
-        "region_reading_order": Value("int32"),
-        "region_type": Value("string"),
-        "region_coords": BaseExporter.POLYGON_FEATURE,
-        "filename": Value("string"),
-        "project_name": Value("string"),
-    })
+    POST_FEATURES = Features(
+        {
+            "image": DatasetImage(decode=False),
+            "text": Value("string"),
+            "region_id": Value("string"),
+            "region_reading_order": Value("int32"),
+            "region_type": Value("string"),
+            "region_coords": BaseExporter.POLYGON_FEATURE,
+            "filename": Value("string"),
+            "project_name": Value("string"),
+        }
+    )
 
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
 
     def process_dataset(
-            self,
-            dataset: Dataset,
-            mask: bool = False,
-            min_width: int = 0,
-            min_height: int = 0,
-            allow_empty: bool = False,
+        self,
+        dataset: Dataset,
+        mask: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
+        allow_empty: bool = False,
     ) -> Dataset | None:
         """Export each region as a separate dataset entry."""
 
-        logger.info(f"Exporting Region XML content with images... (Processed: {len(dataset)})")
+        logger.info(
+            f"Exporting Region XML content with images... (Processed: {len(dataset)})"
+        )
         failed: bool = False
 
         image_processor = ImageProcessor(
@@ -229,11 +225,14 @@ class RegionExporter(BaseExporter):
             """
             Mapping the regions
             """
-            logger.info(f"Start mapping to regions...")
-            out = {k: [] for k in self.POST_FEATURES.keys()}
+            logger.info("Start mapping to regions...")
+            out = {k: [] for k in self.POST_FEATURES}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                if pil_image is None:
+                    logger.warning("Skipping page due to image load failure")
+                    continue
 
                 regions_list = batch["regions"][i]
                 if not regions_list:
@@ -243,7 +242,9 @@ class RegionExporter(BaseExporter):
                     if not allow_empty and not r.get("full_text"):
                         continue
 
-                    cropped_image = image_processor.crop_from_image(pil_image, r["coords"])
+                    cropped_image = image_processor.crop_from_image(
+                        pil_image, r["coords"]
+                    )
                     crop_bytes = None
 
                     if cropped_image:
@@ -262,7 +263,7 @@ class RegionExporter(BaseExporter):
             return out
 
         try:
-            logger.debug(f"Map the provided dataset.")
+            logger.debug("Map the provided dataset.")
             dataset = dataset.map(
                 map_regions,
                 batched=True,
@@ -277,7 +278,7 @@ class RegionExporter(BaseExporter):
             failed = True
 
         if failed:
-            logger.warning(f"No success creating dataset; return None.")
+            logger.warning("No success creating dataset; return None.")
             return None
         return dataset
 
@@ -285,36 +286,40 @@ class RegionExporter(BaseExporter):
 class LineExporter(BaseExporter):
     """Export individual text lines as separate images with metadata."""
 
-    POST_FEATURES = Features({
-        "image": DatasetImage(decode=False),
-        "text": Value("string"),
-        "line_id": Value("string"),
-        "line_reading_order": Value("int64"),
-        "line_coords": BaseExporter.POLYGON_FEATURE,
-        "line_baseline": BaseExporter.POLYGON_FEATURE,
-        "line_augmentation": Value("string"),
-        "region_id": Value("string"),
-        "region_reading_order": Value("int64"),
-        "region_type": Value("string"),
-        "region_coords": BaseExporter.POLYGON_FEATURE,
-        "filename": Value("string"),
-        "project_name": Value("string"),
-    })
+    POST_FEATURES = Features(
+        {
+            "image": DatasetImage(decode=False),
+            "text": Value("string"),
+            "line_id": Value("string"),
+            "line_reading_order": Value("int64"),
+            "line_coords": BaseExporter.POLYGON_FEATURE,
+            "line_baseline": BaseExporter.POLYGON_FEATURE,
+            "line_augmentation": Value("string"),
+            "region_id": Value("string"),
+            "region_reading_order": Value("int64"),
+            "region_type": Value("string"),
+            "region_coords": BaseExporter.POLYGON_FEATURE,
+            "filename": Value("string"),
+            "project_name": Value("string"),
+        }
+    )
 
     def __init__(self, batch_size: int = 32):
         super().__init__(batch_size)
 
     def process_dataset(
-            self,
-            dataset: Dataset,
-            mask: bool = False,
-            min_width: int = 0,
-            min_height: int = 0,
-            allow_empty: bool = False,
-            line_augment: int = 0,
+        self,
+        dataset: Dataset,
+        mask: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
+        allow_empty: bool = False,
+        line_augment: int = 0,
     ) -> Dataset | None:
         """Export each text line as a separate dataset entry."""
-        logger.info(f"Exporting line content with images... (Processed: {len(dataset)})")
+        logger.info(
+            f"Exporting line content with images... (Processed: {len(dataset)})"
+        )
         failed: bool = False
 
         image_processor = ImageProcessor(
@@ -327,10 +332,13 @@ class LineExporter(BaseExporter):
             """
             Mapping the lines and cropping them
             """
-            out = {k: [] for k in self.POST_FEATURES.keys()}
+            out = {k: [] for k in self.POST_FEATURES}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                if pil_image is None:
+                    logger.warning("Skipping page due to image load failure")
+                    continue
 
                 regions_list = batch["regions"][i]
                 for r in regions_list:
@@ -340,10 +348,12 @@ class LineExporter(BaseExporter):
                             continue
 
                         augmented_cropped_images = []
-                        cropped_image = image_processor.crop_from_image(pil_image, line["coords"])
+                        cropped_image = image_processor.crop_from_image(
+                            pil_image, line["coords"]
+                        )
                         if cropped_image:
                             augmented_cropped_images.append(
-                                (image_processor.encode_image(cropped_image), {})
+                                (image_processor.encode_image(cropped_image), "{}")
                             )
                         if line_augment and line_augment > 0 and cropped_image:
                             for _ in range(line_augment):
@@ -351,18 +361,29 @@ class LineExporter(BaseExporter):
                                 augmented_image = None
                                 config = {}
 
-                                while not unique:
-                                    augmented_image, config = image_processor.random_augment_image(cropped_image)
+                                max_retries = 10
+                                retries = 0
+                                while not unique and retries < max_retries:
+                                    augmented_image, config = (
+                                        image_processor.random_augment_image(
+                                            cropped_image
+                                        )
+                                    )
                                     config_str = json.dumps(config)
-                                    if config_str not in [c for _, c in augmented_cropped_images]:
+                                    if config_str not in [
+                                        c for _, c in augmented_cropped_images
+                                    ]:
                                         unique = True
+                                    retries += 1
                                 if augmented_image:
-                                    augmented_image_bytes = image_processor.encode_image(augmented_image)
+                                    augmented_image_bytes = (
+                                        image_processor.encode_image(augmented_image)
+                                    )
                                     if augmented_image_bytes:
                                         augmented_cropped_images.append(
                                             (augmented_image_bytes, json.dumps(config))
                                         )
-                        for (img, config) in augmented_cropped_images:
+                        for img, config in augmented_cropped_images:
                             if img:
                                 out["image"].append({"bytes": img, "path": None})
                                 out["text"].append(line.get("text", ""))
@@ -370,7 +391,9 @@ class LineExporter(BaseExporter):
                                 out["line_reading_order"].append(line["reading_order"])
                                 out["line_coords"].append(line["coords"])
                                 out["line_baseline"].append(line["baseline"])
-                                out["line_augmentation"].append(config if config else "original")
+                                out["line_augmentation"].append(
+                                    config if config else "original"
+                                )
                                 out["region_id"].append(line["region_id"])
                                 out["region_reading_order"].append(r["reading_order"])
                                 out["region_type"].append(r["type"])
@@ -394,7 +417,7 @@ class LineExporter(BaseExporter):
             failed = True
 
         if failed:
-            logger.warning(f"No success creating dataset; return None.")
+            logger.warning("No success creating dataset; return None.")
             return None
         return dataset
 
@@ -417,10 +440,10 @@ class WindowExporter(BaseExporter):
     )
 
     def __init__(
-            self,
-            batch_size: int = 32,
-            window_size: int = 2,
-            overlap: int = 0,
+        self,
+        batch_size: int = 32,
+        window_size: int = 2,
+        overlap: int = 0,
     ):
         """
         Initialize the window exporter.
@@ -438,13 +461,12 @@ class WindowExporter(BaseExporter):
             raise ValueError("Overlap must be less than window size")
 
     def process_dataset(
-            self,
-            dataset: Dataset,
-            mask: bool = False,
-            allow_empty: bool = False
+        self, dataset: Dataset, mask: bool = False, allow_empty: bool = False
     ) -> Dataset | None:
         """Export sliding windows of lines as separate dataset entries."""
-        logger.info(f"Exporting window content with images (processed: {len(dataset)}).")
+        logger.info(
+            f"Exporting window content with images (processed: {len(dataset)})."
+        )
         failed: bool = False
 
         image_processor = ImageProcessor(mask_crop=mask)
@@ -453,56 +475,70 @@ class WindowExporter(BaseExporter):
             """
             Function for dataset mapping.
             """
-            out = {k: [] for k in self.POST_FEATURES.keys()}
+            out = {k: [] for k in self.POST_FEATURES}
 
             for i, img_entry in enumerate(batch["image"]):
                 pil_image = image_processor.load_and_fix_orientation(img_entry["bytes"])
+                if pil_image is None:
+                    logger.warning("Skipping page due to image load failure")
+                    continue
 
                 regions_list = batch["regions"][i] or []
-                all_lines_in_page = []
-
-                for r in regions_list:
-                    all_lines_in_page.extend(r.get("text_lines", []))
-
-                logger.debug(f"Length of all lines: {len(all_lines_in_page)}")
                 step = self.window_size - self.overlap
                 if step < 1:
                     step = 1
 
-                idx = 0
+                # AIDEV-NOTE: window per region to avoid windows crossing paragraph boundaries
+                for r in regions_list:
+                    lines_in_region = r.get("text_lines", [])
+                    logger.debug(f"Length of lines in region: {len(lines_in_region)}")
+                    idx = 0
 
-                for j in range(0, len(all_lines_in_page), step):
-                    window_lines = all_lines_in_page[j: j + self.window_size]
-                    logger.debug(f"Length of window lines: {len(window_lines)} (j: {j}, idx: {idx})")
-                    if not window_lines:
-                        continue
+                    for j in range(0, len(lines_in_region), step):
+                        window_lines = lines_in_region[j : j + self.window_size]
+                        logger.debug(
+                            f"Length of window lines: {len(window_lines)} (j: {j}, idx: {idx})"
+                        )
+                        if not window_lines:
+                            continue
 
-                    window_text = "\n".join([l["text"] for l in window_lines])
-                    window_ids = ", ".join([l["id"] for l in window_lines])
+                        window_text = "\n".join(
+                            [line["text"] or "" for line in window_lines]
+                        )
+                        window_ids = ", ".join([line["id"] for line in window_lines])
 
-                    all_coords = []
-                    for l in window_lines:
-                        all_coords.extend(l["coords"])
+                        all_coords = []
+                        for line in window_lines:
+                            all_coords.extend(line["coords"])
 
-                    if not all_coords:
-                        continue
-                    logger.debug(f"Length of all coords: {len(all_coords)}")
-                    crop_bytes = None
-                    cropped_image = image_processor.crop_from_image(pil_image, all_coords)
-                    if cropped_image:
-                        crop_bytes = image_processor.encode_image(cropped_image)
-                    if crop_bytes:
-                        out["image"].append({"bytes": crop_bytes, "path": None})
-                        out["text"].append(window_text)
-                        out["window_size"].append(len(window_lines))
-                        out["window_index"].append(idx)
-                        out["line_ids"].append(window_ids)
-                        out["line_reading_order"].append(", ".join([str(l["reading_order"]) for l in window_lines]))
-                        out["filename"].append(str(batch["filename"][i]))
-                        out["project_name"].append(str(batch["project_name"][i]))
+                        if not all_coords:
+                            continue
+                        logger.debug(f"Length of all coords: {len(all_coords)}")
+                        crop_bytes = None
+                        cropped_image = image_processor.crop_from_image(
+                            pil_image, all_coords
+                        )
+                        if cropped_image:
+                            crop_bytes = image_processor.encode_image(cropped_image)
+                        if crop_bytes:
+                            out["image"].append({"bytes": crop_bytes, "path": None})
+                            out["text"].append(window_text)
+                            out["window_size"].append(len(window_lines))
+                            out["window_index"].append(idx)
+                            out["line_ids"].append(window_ids)
+                            out["line_reading_order"].append(
+                                ", ".join(
+                                    [
+                                        str(line["reading_order"])
+                                        for line in window_lines
+                                    ]
+                                )
+                            )
+                            out["filename"].append(str(batch["filename"][i]))
+                            out["project_name"].append(str(batch["project_name"][i]))
 
-                    idx += len(window_lines)
-                    logger.debug("Next step.")
+                        idx += len(window_lines)
+                        logger.debug("Next step.")
             return out
 
         try:
@@ -520,6 +556,6 @@ class WindowExporter(BaseExporter):
             failed = True
 
         if failed:
-            logger.warning(f"No success creating dataset; return None.")
+            logger.warning("No success creating dataset; return None.")
             return None
         return dataset

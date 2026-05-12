@@ -4,12 +4,13 @@ Command-line interface for transkribus-hf.
 
 import argparse
 import os
-import sys
 import shutil
-from pathlib import Path
+import sys
 import traceback
+from pathlib import Path
 
 from loguru import logger
+
 from .logger import setup_logger
 
 
@@ -19,13 +20,13 @@ class SourcePathAction(argparse.Action):
     def __call__(self, parser, namespace, value, option_string=None):
         from datasets import get_dataset_config_names  # lazy loading
 
-        token = getattr(namespace, 'token', None) or os.getenv('HF_TOKEN')
+        token = getattr(namespace, "token", None) or os.getenv("HF_TOKEN")
 
-        if value.startswith('http://') or value.startswith('https://'):
+        if value.startswith("http://") or value.startswith("https://"):
             # Case SourcePath is Zip-URL
-            setattr(namespace, self.dest, (value, 'zip_url'))
+            setattr(namespace, self.dest, (value, "zip_url"))
             return
-        elif '/' in value and len(value.split('/')) == 2:
+        elif "/" in value and len(value.split("/")) == 2:
             # Case Source Path is Huggingface Dataset
             try:
                 configs = get_dataset_config_names(value, token=token)
@@ -41,19 +42,21 @@ class SourcePathAction(argparse.Action):
                         f"Hugging Face dataset '{value}' not found or inaccessible: {e}"
                     )
 
-            setattr(namespace, self.dest, (value, 'huggingface'))
+            setattr(namespace, self.dest, (value, "huggingface"))
             return
         else:
             # Case Source Path is Folder
             path = Path(value)
             if path.exists():
                 if path.is_dir():
-                    setattr(namespace, self.dest, (str(path), 'local'))
+                    setattr(namespace, self.dest, (str(path), "local"))
                 else:
-                    setattr(namespace, self.dest, (str(path), 'zip'))
+                    setattr(namespace, self.dest, (str(path), "zip"))
                 return
 
-        parser.error(f"Invalid source path: {value}. Must be a local path, a ZIP-URL, or a HuggingFace dataset ID.")
+        parser.error(
+            f"Invalid source path: {value}. Must be a local path, a ZIP-URL, or a HuggingFace dataset ID."
+        )
 
 
 def main():
@@ -77,14 +80,14 @@ def main():
     )
 
     # Changed to recognizing the namespace automatically
-    '''
+    """
     parser.add_argument(
         "--namespace",
         type=str,
         default=None,
         help="Namespace of the Page XML files (default: empty string)",
     )
-    '''
+    """
 
     # ################ - window mode arguments - ####################
     parser.add_argument(
@@ -104,7 +107,8 @@ def main():
 
     # ################ - huggingface arguments - ####################
     parser.add_argument(
-        "--repo-id", help="HuggingFace repository ID to upload the dataset (e.g., username/dataset-name)"
+        "--repo-id",
+        help="HuggingFace repository ID to upload the dataset (e.g., username/dataset-name)",
     )
 
     parser.add_argument(
@@ -122,8 +126,8 @@ def main():
         type=float,
         default=None,
         help="Split ratio for train split."
-             "Between 0 and 1, default: None (means no split),"
-             "e.g. 0.8 for 80%% train, 20%% test",
+        "Between 0 and 1, default: None (means no split),"
+        "e.g. 0.8 for 80%% train, 20%% test",
     )
 
     parser.add_argument(
@@ -172,7 +176,7 @@ def main():
         action="store_true",
         default=False,
         help="Append to existing HuggingFace Hub dataset (only for uploads, not --local-only). "
-             "If True, checks feature compatibility before processing. (default: False)",
+        "If True, checks feature compatibility before processing. (default: False)",
     )
 
     parser.add_argument(
@@ -233,8 +237,8 @@ def main():
         setup_logger("INFO")  # log_files=False, level=INFO
 
     logger.info("Process started via CLI")
-    logger.info("Source path: {}".format(source_path))
-    logger.info("Source type: {}".format(source_type))
+    logger.info(f"Source path: {source_path}")
+    logger.info(f"Source type: {source_type}")
     logger.info("#" * 60)
 
     # ################ - validate parameters - ####################
@@ -254,7 +258,9 @@ def main():
         logger.error("Error: --num-augmentation has to be a positive integer")
         sys.exit(1)
     elif args.num_augmentation and args.mode != "line":
-        logger.warning("Warning: --num-augmentation is ignored since the export mode is not 'line'")
+        logger.warning(
+            "Warning: --num-augmentation is ignored since the export mode is not 'line'"
+        )
 
     # Validate window parameters
     if args.mode == "window":
@@ -277,26 +283,30 @@ def main():
         parse_xml = True
 
     # Get back generator functions and kwargs depending on source type
-    if source_type == 'local':
+    if source_type == "local":
         gen_func = xmlparser.parse_folder
         gen_kwargs = {"folder_path": source_path, "parse_xml": parse_xml}
-    elif source_type in ['zip', 'zip_url']:
+    elif source_type in ["zip", "zip_url"]:
         gen_func = xmlparser.parse_zip
-        gen_kwargs = {'zip_path': source_path, 'parse_xml': parse_xml}
-    elif source_type == 'huggingface':
+        gen_kwargs = {"zip_path": source_path, "parse_xml": parse_xml}
+    elif source_type == "huggingface":
         gen_func = xmlparser.parse_dataset
-        gen_kwargs = {'dataset': source_path, 'token': args.token, 'parse_xml': parse_xml}
+        gen_kwargs = {
+            "dataset": source_path,
+            "token": args.token,
+            "parse_xml": parse_xml,
+        }
     else:
         logger.error("Error: Unsupported source")
         sys.exit(1)
 
     logger.debug("Got generator function and kwargs")
-    if (gen_func and gen_kwargs) is None:
+    if gen_func is None or gen_kwargs is None:
         logger.error("Error: No generator function and/or kwargs available")
         sys.exit(1)
 
     # Initialize converter
-    logger.info(f"Creating converter")
+    logger.info("Creating converter")
     converter = XmlConverter(
         gen_func=gen_func,
         gen_kwargs=gen_kwargs,
@@ -386,7 +396,7 @@ def main():
                 estimated_windows = 0
                 regions_with_lines = stats["total_lines"] // 5
                 estimated_windows += (
-                        max(0, regions_with_lines - args.window_size + 1) // step
+                    max(0, regions_with_lines - args.window_size + 1) // step
                 )
                 logger.info(
                     f"  Estimated windows (window_size={args.window_size}, "

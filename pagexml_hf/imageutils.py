@@ -1,14 +1,14 @@
 """
 Imageutils to handle the page/regions/line images more efficient.
 """
-import numpy as np
+
 import io
 import random
-from typing import List, Tuple
-from skimage import draw
-from PIL import Image, ImageFilter
 
+import numpy as np
 from loguru import logger
+from PIL import Image, ImageFilter
+from skimage import draw
 
 
 class ImageProcessor:
@@ -18,10 +18,10 @@ class ImageProcessor:
     """
 
     def __init__(
-            self,
-            mask_crop: bool = False,
-            min_width: int = 0,
-            min_height: int = 0,
+        self,
+        mask_crop: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
     ):
         self.mask_crop = mask_crop
         self.min_width = min_width
@@ -35,7 +35,7 @@ class ImageProcessor:
             "downscaling",
         ]
 
-        logger.debug(f"ImageProcessor initialized")
+        logger.debug("ImageProcessor initialized")
 
     @staticmethod
     def load_and_fix_orientation(image_bytes: bytes) -> Image.Image | None:
@@ -59,13 +59,15 @@ class ImageProcessor:
 
             return image
         except Exception as e:
-            logger.debug(f"Warning: Error loading image: {image_bytes}: {e}")
+            logger.debug(
+                f"Warning: Error loading image ({len(image_bytes)} bytes): {e}"
+            )
             return None
 
     @staticmethod
     def encode_image(image: Image.Image) -> bytes:
         """
-        Tool 2: Saves the PIL Image to JPEG bytes.
+        Tool 2: Saves the PIL Image to PNG bytes.
         """
         with io.BytesIO() as buffer:
             if image.mode != "RGB":
@@ -73,7 +75,9 @@ class ImageProcessor:
             image.save(buffer, format="PNG")
             return buffer.getvalue()
 
-    def crop_from_image(self, image: Image.Image, coords: List[Tuple[int, int]]) -> Image.Image | None:
+    def crop_from_image(
+        self, image: Image.Image, coords: list[tuple[int, int]]
+    ) -> Image.Image | None:
         """
         Tool 3: Crops the given image from the given coordinates.
         Returns pillow Image if successful, None otherwise.
@@ -85,8 +89,14 @@ class ImageProcessor:
 
             x_coords = [pt[0] for pt in coords]
             y_coords = [pt[1] for pt in coords]
-            min_x, max_x = max(0, min(x_coords)), min(img_ndarray.shape[1], max(x_coords))
-            min_y, max_y = max(0, min(y_coords)), min(img_ndarray.shape[0], max(y_coords))
+            min_x, max_x = (
+                max(0, min(x_coords)),
+                min(img_ndarray.shape[1], max(x_coords)),
+            )
+            min_y, max_y = (
+                max(0, min(y_coords)),
+                min(img_ndarray.shape[0], max(y_coords)),
+            )
 
             if min_x >= max_x or min_y >= max_y:
                 return None
@@ -108,7 +118,9 @@ class ImageProcessor:
                     f"y_range=[{min(y_coords_shifted)},{max(y_coords_shifted)}], "
                     f"n_points={len(shifted_coords)}"
                 )
-                rr, cc = draw.polygon(y_coords_shifted, x_coords_shifted, shape=mask_img.shape)
+                rr, cc = draw.polygon(
+                    y_coords_shifted, x_coords_shifted, shape=mask_img.shape
+                )
                 mask_img[rr, cc] = 255
                 img_cropped = np.where(mask_img[:, :, None] == 255, img_cropped, 255)
 
@@ -117,7 +129,9 @@ class ImageProcessor:
             logger.debug(f"Failed cropping: {e}")
             return None
 
-    def augment_image(self, image: Image.Image, config: dict[str, int | float]) -> Image.Image | None:
+    def augment_image(
+        self, image: Image.Image, config: dict[str, int | float]
+    ) -> Image.Image | None:
         """
         Tool 4: Augments the given PIL Image.
         """
@@ -154,13 +168,17 @@ class ImageProcessor:
             logger.debug(f"Failed augmenting: {e}")
             return None
 
-    def random_augment_image(self, image: Image.Image) -> tuple[Image.Image | None, dict]:
+    def random_augment_image(
+        self, image: Image.Image
+    ) -> tuple[Image.Image | None, dict]:
         """
         Tool 5: Randomly Augments the given PIL Image.
         """
-        num_to_choose = random.randint(1, min(len(self.augmentation_keys), 2))  # max two filters
+        num_to_choose = random.randint(
+            1, min(len(self.augmentation_keys), 2)
+        )  # max two filters
         selected = random.sample(self.augmentation_keys, num_to_choose)
-        config = {}
+        config: dict[str, int | float] = {}
         dil_er_done = False  # do either dilation or erosion, not both
 
         for i in selected:

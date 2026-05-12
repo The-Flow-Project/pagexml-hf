@@ -1,0 +1,106 @@
+@startuml pagexml-hf Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam classFontSize 13
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam linetype ortho
+skinparam noteFontSize 10
+skinparam noteBackgroundColor white
+skinparam noteBorderColor white
+
+' ── Parser ──────────────────────────────────────────────
+class XmlParser {
+    + parse_zip() : Generator
+    + parse_folder() : Generator
+    + parse_dataset() : Generator
+}
+
+note as TypeLegend
+  Image = PIL.Image
+  Dataset = datasets.Dataset
+  Features = datasets.Features
+  Generator = typing.Generator
+end note
+
+XmlParser .. TypeLegend #white
+
+
+' ── Converter ───────────────────────────────────────────
+class XmlConverter {
+    + {static} EXPORT_MODES : dict[str, BaseExporter]
+    + convert() : Dataset
+    + upload_to_hub() : str
+    + convert_and_upload() : str
+}
+
+' ── Exporters ───────────────────────────────────────────
+abstract class BaseExporter {
+    + {abstract} process_dataset() : Dataset
+}
+
+class RawXMLExporter {
+    + {static} POST_FEATURES : Features
+    + process_dataset() : Dataset
+}
+
+class TextExporter {
+    + {static} POST_FEATURES : Features
+    + process_dataset() : Dataset
+}
+
+class RegionExporter {
+    + {static} POST_FEATURES : Features
+    + process_dataset() : Dataset
+}
+
+class LineExporter {
+    + {static} POST_FEATURES : Features
+    + process_dataset() : Dataset
+}
+
+class WindowExporter {
+    + {static} POST_FEATURES : Features
+    + process_dataset() : Dataset
+}
+
+' ── Image Processing ────────────────────────────────────
+class ImageProcessor {
+    + {static} load_and_fix_orientation() : Image
+    + {static} encode_image() : bytes
+    + crop_from_image() : Image | None
+    + augment_image() : Image | None
+    + random_augment_image() : tuple[Image | None, dict]
+}
+
+' ── Hub Upload ──────────────────────────────────────────
+class HubUploader {
+    + upload_to_hub() : str
+}
+
+' ── Relationships ───────────────────────────────────────
+
+' Inheritance
+BaseExporter <|-- RawXMLExporter
+BaseExporter <|-- TextExporter
+BaseExporter <|-- RegionExporter
+BaseExporter <|-- LineExporter
+BaseExporter <|-- WindowExporter
+
+' XmlParser feeds generators into XmlConverter
+XmlParser ..> XmlConverter : "gen_func\n(generator)"
+
+' XmlConverter creates & delegates to an Exporter
+XmlConverter --> BaseExporter : "exporter"
+
+' XmlConverter delegates upload to HubUploader
+XmlConverter ..> HubUploader : "creates &\ndelegates upload"
+
+' Exporters use ImageProcessor internally
+RawXMLExporter ..> ImageProcessor : uses
+TextExporter ..> ImageProcessor : uses
+RegionExporter ..> ImageProcessor : uses
+LineExporter ..> ImageProcessor : uses
+WindowExporter ..> ImageProcessor : uses
+
+@enduml

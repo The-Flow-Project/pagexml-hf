@@ -7,19 +7,18 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from datasets import (
     Dataset,
     DatasetDict,
     Features,
-    Value,
-    Image as DatasetImage,
-    Sequence,
     List,
+    Sequence,
+    Value,
 )
+from datasets import Image as DatasetImage
 from huggingface_hub import HfApi, create_repo, get_token, repo_exists
-
 from loguru import logger
 
 
@@ -36,14 +35,14 @@ class HubUploader:
         self.source_name = source_name
 
     def upload_to_hub(
-            self,
-            dataset: Dataset | DatasetDict,
-            repo_id: str,
-            token: str = "",
-            private: bool = False,
-            commit_message: str = "Data export with pagexml-hf",
-            append: bool = False,
-            number_of_augmentations: int = 0,
+        self,
+        dataset: Dataset | DatasetDict,
+        repo_id: str,
+        token: str = "",
+        private: bool = False,
+        commit_message: str = "Data export with pagexml-hf",
+        append: bool = False,
+        number_of_augmentations: int = 0,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub using parquet shards.
@@ -114,17 +113,15 @@ class HubUploader:
 
     @staticmethod
     def _check_and_create_repo(
-            repo_id: str,
-            private: bool,
-            token: str,
+        repo_id: str,
+        private: bool,
+        token: str,
     ) -> bool:
         """Check if repo exists and create if needed. Returns True if existed."""
         dataset_repo_exists = False
         try:
             dataset_repo_exists = repo_exists(
-                repo_id=repo_id,
-                repo_type="dataset",
-                token=token
+                repo_id=repo_id, repo_type="dataset", token=token
             )
             if dataset_repo_exists:
                 logger.info(f"Repository {repo_id} already exists")
@@ -154,7 +151,9 @@ class HubUploader:
     @staticmethod
     def _delete_existing_data(api: HfApi, repo_id: str) -> None:
         """Delete existing data folder from repository."""
-        logger.warning(f"Overwrite mode enabled. Deleting existing data from {repo_id}...")
+        logger.warning(
+            f"Overwrite mode enabled. Deleting existing data from {repo_id}..."
+        )
         try:
             api.delete_folder(
                 repo_id=repo_id,
@@ -167,19 +166,19 @@ class HubUploader:
             logger.debug(f"Could not delete data folder (might not exist): {e}")
 
     def _upload_as_parquet_shard(
-            self,
-            api: HfApi,
-            dataset: Dataset | DatasetDict,
-            repo_id: str,
-            commit_message: str,
-            append: bool,
-            dataset_repo_exists: bool,
-            number_of_augmentations: int | None = None,
+        self,
+        api: HfApi,
+        dataset: Dataset | DatasetDict,
+        repo_id: str,
+        commit_message: str,
+        append: bool,
+        dataset_repo_exists: bool,
+        number_of_augmentations: int | None = None,
     ) -> str:
         """Upload dataset as parquet shards organized by project."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        all_projects = set()
+        all_projects: set[str] = set()
         splits_info = {}
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -220,7 +219,9 @@ class HubUploader:
                     )
 
                 splits_info[split_name] = split_total_samples
-                logger.info(f"✓ Split '{split_name}' complete ({split_total_samples} samples)")
+                logger.info(
+                    f"✓ Split '{split_name}' complete ({split_total_samples} samples)"
+                )
 
             # Upload all shards in a single batch
             logger.info("Uploading parquet shards with upload_folder...")
@@ -248,16 +249,18 @@ class HubUploader:
 
         repo_url = f"https://huggingface.co/datasets/{repo_id}"
         logger.info(f"Dataset uploaded successfully: {repo_url}")
-        logger.info("Note: The Hub will automatically merge all parquet files when loading.")
+        logger.info(
+            "Note: The Hub will automatically merge all parquet files when loading."
+        )
         return repo_url
 
     @staticmethod
     def _upload_project_shards(
-            project_dataset: Dataset,
-            project_name: str,
-            split_name: str,
-            timestamp: str,
-            data_root: Path,
+        project_dataset: Dataset,
+        project_name: str,
+        split_name: str,
+        timestamp: str,
+        data_root: Path,
     ) -> None:
         """Write shards for a single project under the temp data root."""
         shard_size = 10000
@@ -295,7 +298,7 @@ class ProjectGrouper:
     """Groups dataset samples by project name."""
 
     @staticmethod
-    def group_by_project(dataset: Dataset) -> Dict[str, list]:
+    def group_by_project(dataset: Dataset) -> dict[str, list]:
         """
         Group dataset indices by project_name.
 
@@ -305,7 +308,7 @@ class ProjectGrouper:
         Returns:
             Dictionary mapping project_name to list of indices
         """
-        projects = {}
+        projects: dict[str, list] = {}
 
         for idx, project_name in enumerate(dataset["project_name"]):
             # Ensure project_name is set
@@ -325,14 +328,14 @@ class ReadmeGenerator:
 
     @staticmethod
     def create_or_update_readme(
-            api: HfApi,
-            repo_id: str,
-            dataset: DatasetDict,
-            splits_info: Dict[str, int],
-            all_projects: list,
-            append: bool,
-            dataset_repo_exists: bool,
-            number_of_augmentations: int | None = None,
+        api: HfApi,
+        repo_id: str,
+        dataset: DatasetDict,
+        splits_info: dict[str, int],
+        all_projects: list,
+        append: bool,
+        dataset_repo_exists: bool,
+        number_of_augmentations: int | None = None,
     ) -> None:
         """Create or update README.md with dataset card configuration."""
         try:
@@ -348,7 +351,7 @@ class ReadmeGenerator:
                         filename="README.md",
                         repo_type="dataset",
                     )
-                    with open(existing_readme_path, encoding='utf-8') as f:
+                    with open(existing_readme_path, encoding="utf-8") as f:
                         existing_readme_content = f.read()
                     logger.info("Found existing README.md, will update it")
 
@@ -370,7 +373,7 @@ class ReadmeGenerator:
             if append and existing_projects:
                 # Merge existing projects with new ones (remove duplicates)
                 all_projects_set = set(all_projects) | set(existing_projects)
-                merged_projects = sorted(list(all_projects_set))
+                merged_projects = sorted(all_projects_set)
                 logger.info(
                     f"Merged {len(existing_projects)} existing + {len(all_projects)} new "
                     f"= {len(merged_projects)} total projects"
@@ -379,18 +382,18 @@ class ReadmeGenerator:
             # Calculate total size
             total_splits_info = {}
             if append and existing_splits_info:
-                for split_name in set(list(splits_info.keys()) + list(existing_splits_info.keys())):
-                    total_splits_info[split_name] = (
-                            splits_info.get(split_name, 0) + existing_splits_info.get(split_name, 0)
-                    )
+                for split_name in set(
+                    list(splits_info.keys()) + list(existing_splits_info.keys())
+                ):
+                    total_splits_info[split_name] = splits_info.get(
+                        split_name, 0
+                    ) + existing_splits_info.get(split_name, 0)
             else:
                 total_splits_info = splits_info.copy()
 
             # Calculate dataset size
             total_samples = sum(total_splits_info.values())
-            first_sample = dataset[first_split][0]
-            approx_size_per_sample = len(str(first_sample)) * 2
-            approx_total_size_mb = (total_samples * approx_size_per_sample) / (1024 * 1024)
+            approx_total_size_mb = dataset[first_split].data.nbytes / (1024 * 1024)
 
             # Generate content
             yaml_config = YamlGenerator.generate_dataset_card_yaml(
@@ -411,8 +414,9 @@ class ReadmeGenerator:
             )
 
             # Upload README
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False,
-                                             encoding='utf-8') as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".md", delete=False, encoding="utf-8"
+            ) as tmp_file:
                 tmp_file.write(new_readme)
                 tmp_readme_path = tmp_file.name
 
@@ -434,14 +438,14 @@ class ReadmeGenerator:
 
     @staticmethod
     def _build_readme_content(
-            yaml_config: str,
-            repo_id: str,
-            total_splits_info: Dict[str, int],
-            all_projects: list,
-            total_samples: int,
-            approx_total_size_mb: float,
-            features: Features,
-            number_of_augmentations: int | None = None,
+        yaml_config: str,
+        repo_id: str,
+        total_splits_info: dict[str, int],
+        all_projects: list,
+        total_samples: int,
+        approx_total_size_mb: float,
+        features: Features,
+        number_of_augmentations: int | None = None,
     ) -> str:
         """Build README content."""
         # Always generate fresh content with updated statistics
@@ -452,7 +456,7 @@ class ReadmeGenerator:
 {yaml_config}
 ---
 
-# Dataset Card for {repo_id.split('/')[-1]}
+# Dataset Card for {repo_id.split("/")[-1]}
 
 This dataset was created using pagexml-hf converter from Transkribus PageXML data.
 
@@ -478,7 +482,7 @@ This dataset contains {total_samples:,} samples across {len(total_splits_info)} 
             readme += f"""
 - Number of augmentations: {number_of_augmentations:,}
 """
-        readme += f"""
+        readme += """
 ### Features
 
 """
@@ -504,7 +508,7 @@ The HuggingFace Hub automatically merges all parquet files when loading the data
 from datasets import load_dataset
 
 # Load entire dataset
-dataset = load_dataset("{repo_id}") 
+dataset = load_dataset("{repo_id}")
 
 # Load specific split
 train_dataset = load_dataset("{repo_id}", split="train")
@@ -523,10 +527,10 @@ class ReadmeParser:
     """Parses information from README files."""
 
     @staticmethod
-    def parse_splits_from_readme(readme_content: str) -> Dict[str, int]:
+    def parse_splits_from_readme(readme_content: str) -> dict[str, int]:
         """Parse split information from existing README."""
         splits = {}
-        pattern = r'-\s+name:\s+(\w+)\s+num_examples:\s+(\d+)'
+        pattern = r"-\s+name:\s+(\w+)\s+num_examples:\s+(\d+)"
         matches = re.findall(pattern, readme_content)
 
         for split_name, count in matches:
@@ -549,7 +553,7 @@ class ReadmeParser:
             start_idx = readme_content.find(start_marker)
             if start_idx != -1:
                 # Find the next section (starts with ##)
-                content_after = readme_content[start_idx + len(start_marker):]
+                content_after = readme_content[start_idx + len(start_marker) :]
                 end_idx = content_after.find("\n##")
                 if end_idx != -1:
                     projects_section = content_after[:end_idx]
@@ -557,13 +561,15 @@ class ReadmeParser:
                     projects_section = content_after
 
                 # Extract project names
-                for project in projects_section.split(','):
+                for project in projects_section.split(","):
                     project_name = project.strip()
                     if project_name:
                         projects.append(project_name)
 
         if projects:
-            logger.info(f"Parsed {len(projects)} existing project(s) from README: {projects}")
+            logger.info(
+                f"Parsed {len(projects)} existing project(s) from README: {projects}"
+            )
 
         return projects
 
@@ -573,9 +579,9 @@ class YamlGenerator:
 
     @staticmethod
     def generate_dataset_card_yaml(
-            splits_info: Dict[str, int],
-            features: Features,
-            dataset_size_mb: float,
+        splits_info: dict[str, int],
+        features: Features,
+        dataset_size_mb: float,
     ) -> str:
         """Generate YAML frontmatter for dataset card."""
         yaml_lines = [
@@ -587,12 +593,14 @@ class YamlGenerator:
         # Add feature definitions
         for feature_name, feature_type in features.items():
             yaml_lines.extend(
-                FeatureYamlConverter.feature_to_yaml(feature_name, feature_type, indent=2)
+                FeatureYamlConverter.feature_to_yaml(
+                    feature_name, feature_type, indent=2
+                )
             )
 
         yaml_lines.append("  splits:")
 
-        for split_name in splits_info.keys():
+        for split_name in splits_info:
             yaml_lines.append(f"  - name: {split_name}")
             yaml_lines.append(f"    num_examples: {splits_info[split_name]}")
             yaml_lines.append(
@@ -600,32 +608,38 @@ class YamlGenerator:
             )
 
         total_bytes = int(dataset_size_mb * 1024 * 1024)
-        yaml_lines.extend([
-            f"  download_size: {total_bytes}",
-            f"  dataset_size: {total_bytes}",
-        ])
+        yaml_lines.extend(
+            [
+                f"  download_size: {total_bytes}",
+                f"  dataset_size: {total_bytes}",
+            ]
+        )
 
-        yaml_lines.extend([
-            "configs:",
-            "- config_name: default",
-            "  data_files:",
-        ])
+        yaml_lines.extend(
+            [
+                "configs:",
+                "- config_name: default",
+                "  data_files:",
+            ]
+        )
 
-        for split_name in splits_info.keys():
+        for split_name in splits_info:
             yaml_lines.append(f"  - split: {split_name}")
             yaml_lines.append(f"    path: data/{split_name}/**/*.parquet")
 
-        yaml_lines.extend([
-            "tags:",
-            "  - image-to-text",
-            "  - htr",
-            "  - trocr",
-            "  - transcription",
-            "  - pagexml",
-            "license: mit",
-        ])
+        yaml_lines.extend(
+            [
+                "tags:",
+                "  - image-to-text",
+                "  - htr",
+                "  - trocr",
+                "  - transcription",
+                "  - pagexml",
+                "license: mit",
+            ]
+        )
 
-        return '\n'.join(yaml_lines)
+        return "\n".join(yaml_lines)
 
 
 class FeatureYamlConverter:
@@ -646,22 +660,26 @@ class FeatureYamlConverter:
         elif isinstance(feature, DatasetImage):
             lines.append(f"{spaces}  dtype:")
             lines.append(f"{spaces}    image:")
-            if hasattr(feature, 'decode') and not feature.decode:
+            if hasattr(feature, "decode") and not feature.decode:
                 lines.append(f"{spaces}      decode: false")
 
         elif isinstance(feature, (Sequence, List)):
             lines.append(f"{spaces}  dtype:")
 
-            if hasattr(feature, 'feature'):
+            if hasattr(feature, "feature"):
                 inner_feature = feature.feature
 
                 if isinstance(inner_feature, Value):
                     lines.append(f"{spaces}    sequence: {inner_feature.dtype}")
 
                 elif isinstance(inner_feature, (Sequence, List)):
-                    if hasattr(inner_feature, 'feature') and isinstance(inner_feature.feature, Value):
+                    if hasattr(inner_feature, "feature") and isinstance(
+                        inner_feature.feature, Value
+                    ):
                         lines.append(f"{spaces}    sequence:")
-                        lines.append(f"{spaces}      sequence: {inner_feature.feature.dtype}")
+                        lines.append(
+                            f"{spaces}      sequence: {inner_feature.feature.dtype}"
+                        )
 
                 elif isinstance(inner_feature, dict):
                     lines.append(f"{spaces}    sequence:")
@@ -687,4 +705,3 @@ class FeatureYamlConverter:
             lines.append(f"{spaces}  dtype: {str(feature)}")
 
         return lines
-

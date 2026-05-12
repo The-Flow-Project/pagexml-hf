@@ -70,6 +70,8 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/_autosummary/
+docs/_static/
 
 # PyBuilder
 .pybuilder/
@@ -77,6 +79,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
 
 # IPython
 profile_default/
@@ -198,3 +201,6 @@ cython_debug/
 
 # Is handeled by pyproject.toml
 requirements.txt
+
+# Agents
+.claude/

@@ -3,17 +3,17 @@ transkribus-hf: Convert Transkribus ZIP files/Page XML export folder to HuggingF
 """
 
 from .converter import XmlConverter
-from .parser import XmlParser
 from .exporters import (
-    RawXMLExporter,
-    TextExporter,
-    RegionExporter,
     LineExporter,
+    RawXMLExporter,
+    RegionExporter,
+    TextExporter,
     WindowExporter,
 )
 from .logger import setup_logger
+from .parser import XmlParser
 
-__version__ = "0.9.3+fork.1"
+__version__ = "0.9.5+fork.1"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "jnswidmer"]
 

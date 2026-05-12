@@ -1,0 +1,90 @@
+name: CI - Tests and Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        python-version: [ '3.12' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest tests/ --cov=pagexml_hf/ --cov-report=xml --cov-report=term
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # Auto-Fix Phase
+      - name: Auto-format code
+        run: |
+          uv run black pagexml_hf/ tests/
+          uv run isort pagexml_hf/ tests/
+          uv run ruff check --fix pagexml_hf/ tests/
+
+      # Check Phase (sollte nach Fixes bestehen)
+      - name: Verify code formatting
+        run: uv run black --check pagexml_hf/ tests/
+
+      - name: Verify import sorting
+        run: uv run isort --check-only pagexml_hf/ tests/
+
+      - name: Lint with Ruff
+        run: uv run ruff check pagexml_hf/ tests/
+
+      - name: Type check with mypy
+        run: uv run mypy pagexml_hf/
+        continue-on-error: true  # Nur Warnung, nicht kritisch
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+
+      - name: Build package
+        run: uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

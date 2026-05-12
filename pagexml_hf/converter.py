@@ -3,30 +3,29 @@ Main converter class for Transkribus to HuggingFace datasets.
 """
 
 from pathlib import Path
-from typing import Dict, Any
-from loguru import logger
+from typing import Any
 
 from datasets import (
     Dataset,
     DatasetDict,
     Features,
-    Image as DatasetImage,
-    Value,
     List,
-    load_dataset,
+    Value,
     disable_caching,
+    load_dataset,
 )
+from datasets import Image as DatasetImage
 from huggingface_hub import repo_exists
+from loguru import logger
 
 from .exporters import (
     BaseExporter,
-    RawXMLExporter,
-    TextExporter,
-    RegionExporter,
     LineExporter,
+    RawXMLExporter,
+    RegionExporter,
+    TextExporter,
     WindowExporter,
 )
-
 from .hub_utils import HubUploader
 
 # Disable dataset caching to force rebuilding each time
@@ -38,6 +37,7 @@ class XmlConverter:
     Main converter class for converting Transkribus
     ZIP/XML-folder files to HuggingFace datasets.
     """
+
     POLYGON_FEATURE = BaseExporter.POLYGON_FEATURE
 
     PRE_FEATURES = Features(
@@ -48,24 +48,25 @@ class XmlConverter:
             "project_name": Value("string"),
             "image_width": Value("int64"),
             "image_height": Value("int64"),
-
-            "regions": List(feature={
-                "id": Value("string"),
-                "type": Value("string"),
-                "coords": POLYGON_FEATURE,
-
-                "text_lines": List(feature={
+            "regions": List(
+                feature={
                     "id": Value("string"),
-                    "text": Value("string"),
+                    "type": Value("string"),
                     "coords": POLYGON_FEATURE,
-                    "baseline": POLYGON_FEATURE,
+                    "text_lines": List(
+                        feature={
+                            "id": Value("string"),
+                            "text": Value("string"),
+                            "coords": POLYGON_FEATURE,
+                            "baseline": POLYGON_FEATURE,
+                            "reading_order": Value("int64"),
+                            "region_id": Value("string"),
+                        }
+                    ),
                     "reading_order": Value("int64"),
-                    "region_id": Value("string"),
-                }),
-
-                "reading_order": Value("int64"),
-                "full_text": Value("string"),
-            }),
+                    "full_text": Value("string"),
+                }
+            ),
         }
     )
 
@@ -78,11 +79,11 @@ class XmlConverter:
     }
 
     def __init__(
-            self,
-            gen_func,
-            gen_kwargs: Dict[str, Any],
-            source_path: str | None = None,
-            source_type: str | None = None,
+        self,
+        gen_func,
+        gen_kwargs: dict[str, Any],
+        source_path: str | None = None,
+        source_type: str | None = None,
     ):
         """
         Initialize the converter.
@@ -96,17 +97,17 @@ class XmlConverter:
 
         self.gen_func = gen_func
         self.gen_kwargs = gen_kwargs
-        self.exporter = None
+        self.exporter: BaseExporter | None = None
 
         # Metadata
-        if source_type in ['huggingface', 'zip_url'] and source_path is not None:
+        if source_type in ["huggingface", "zip_url"] and source_path is not None:
             self.source_name = source_path
-        elif source_type in ['zip', 'local'] and source_path is not None:
+        elif source_type in ["zip", "local"] and source_path is not None:
             self.source_name = Path(source_path).name
         else:
-            self.source_name = 'unknown_source'
+            self.source_name = "unknown_source"
 
-        self.stats_cache = None
+        self.stats_cache: dict[str, list[Any] | float | int] | None = None
 
     @staticmethod
     def generation_wrapper(gen_func, gen_kwargs):
@@ -126,7 +127,7 @@ class XmlConverter:
             generator=self.generation_wrapper,
             gen_kwargs={"gen_func": self.gen_func, "gen_kwargs": self.gen_kwargs},
             features=self.PRE_FEATURES,
-            keep_in_memory=True,
+            keep_in_memory=False,
             num_proc=1,
         )
         logger.debug(f"Created dataset ({ds.info}).")
@@ -134,7 +135,10 @@ class XmlConverter:
 
     def _compute_stats(self, dataset: Dataset):
         projects = set()
-        if "project_name" in dataset.column_names and dataset["project_name"] is not None:
+        if (
+            "project_name" in dataset.column_names
+            and dataset["project_name"] is not None
+        ):
             for project in dataset["project_name"]:
                 projects.add(project)
         total_pages = len(set(dataset["filename"]))
@@ -169,16 +173,24 @@ class XmlConverter:
             "total_lines": total_lines,
             "total_unique_lines": total_unique_lines,
             "projects": list(projects),
-            "avg_regions_per_page": total_unique_regions / total_pages if total_pages > 0 else 0,
-            "avg_lines_per_page": total_unique_lines / total_pages if total_pages > 0 else 0,
-            "avg_lines_per_region": total_unique_lines / total_unique_regions if total_unique_regions > 0 else 0,
+            "avg_regions_per_page": (
+                total_unique_regions / total_pages if total_pages > 0 else 0
+            ),
+            "avg_lines_per_page": (
+                total_unique_lines / total_pages if total_pages > 0 else 0
+            ),
+            "avg_lines_per_region": (
+                total_unique_lines / total_unique_regions
+                if total_unique_regions > 0
+                else 0
+            ),
         }
 
     def _check_exporter_feature_compatibility(
-            self,
-            repo_id: str,
-            export_mode: str,
-            token: str | None = None,
+        self,
+        repo_id: str,
+        export_mode: str,
+        token: str | None = None,
     ) -> None:
         """
         Check if the exporter's post_features are compatible with existing repo.
@@ -197,7 +209,9 @@ class XmlConverter:
         try:
             exists = repo_exists(repo_id=repo_id, repo_type="dataset", token=token)
             if not exists:
-                logger.info(f"Repository {repo_id} does not exist yet - no feature check needed")
+                logger.info(
+                    f"Repository {repo_id} does not exist yet - no feature check needed"
+                )
                 return
         except Exception as e:
             logger.warning(f"Could not check if repo exists: {e}")
@@ -207,7 +221,9 @@ class XmlConverter:
         exporter_class = self.EXPORT_MODES[export_mode]
         expected_features = exporter_class.POST_FEATURES
 
-        logger.info(f"Checking feature compatibility with {repo_id} before processing data...")
+        logger.info(
+            f"Checking feature compatibility with {repo_id} before processing data..."
+        )
 
         # Load existing dataset features
         try:
@@ -218,7 +234,9 @@ class XmlConverter:
                 if str(expected_features) != str(existing_features):
                     logger.error("Feature mismatch detected!")
                     logger.error(f"Existing features: {existing_features}")
-                    logger.error(f"Expected features (from {export_mode} exporter): {expected_features}")
+                    logger.error(
+                        f"Expected features (from {export_mode} exporter): {expected_features}"
+                    )
                     raise ValueError(
                         f"Feature mismatch! The {export_mode} exporter produces features that "
                         f"don't match the existing dataset.\n"
@@ -235,19 +253,19 @@ class XmlConverter:
             logger.info("Proceeding with data processing (feature check inconclusive)")
 
     def convert(
-            self,
-            export_mode: str = "text",
-            window_size: int = 2,
-            overlap: int = 0,
-            batch_size: int = 32,
-            split_train: float = 1.0,
-            split_seed: int = 42,
-            split_shuffle: bool = False,
-            mask_crop: bool = False,
-            min_width: int = 0,
-            min_height: int = 0,
-            allow_empty: bool = False,
-            line_augment: int = 0,
+        self,
+        export_mode: str = "text",
+        window_size: int = 2,
+        overlap: int = 0,
+        batch_size: int = 32,
+        split_train: float = 1.0,
+        split_seed: int = 42,
+        split_shuffle: bool = False,
+        mask_crop: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
+        allow_empty: bool = False,
+        line_augment: int = 0,
     ) -> Dataset | DatasetDict:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -271,10 +289,8 @@ class XmlConverter:
             HuggingFace Dataset
         """
         if export_mode not in self.EXPORT_MODES:
-            raise ValueError(
-                f"Invalid export mode: {export_mode}. \
-                    Available modes: {list(self.EXPORT_MODES.keys())}"
-            )
+            raise ValueError(f"Invalid export mode: {export_mode}. \
+                    Available modes: {list(self.EXPORT_MODES.keys())}")
 
         base_dataset = self._create_base_dataset()
         logger.debug("#" * 80)
@@ -283,7 +299,7 @@ class XmlConverter:
 
         # Handle both zip and folder path for exporters
         exporter_class = self.EXPORT_MODES[export_mode]
-        if export_mode == "window":
+        if export_mode == "window" and isinstance(exporter_class, WindowExporter):
             logger.info(
                 f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})."
             )
@@ -294,15 +310,17 @@ class XmlConverter:
             )
         else:
             logger.info(f"Converting to {export_mode} format...")
-            self.exporter = exporter_class(batch_size=batch_size)
 
         # Export dataset
-        if export_mode == "line":
+        if export_mode == "line" and isinstance(exporter_class, LineExporter):
+            self.exporter = exporter_class(batch_size=batch_size)
             if line_augment and line_augment < 0:
-                logger.debug("Line augmentation disabled")
+                logger.warning(f"line_augment={line_augment} is invalid; setting to 0")
                 line_augment = 0
             if line_augment and line_augment > 5:
-                logger.debug("Reduce amount of line augmentation to 5")
+                logger.warning(
+                    f"line_augment={line_augment} exceeds maximum; clamping to 5"
+                )
                 line_augment = 5
             # For line modes, we can apply mask cropping and augmentation
             dataset = self.exporter.process_dataset(
@@ -313,8 +331,9 @@ class XmlConverter:
                 allow_empty=allow_empty,
                 line_augment=line_augment,
             )
-        elif export_mode == "region":
+        elif export_mode == "region" and isinstance(exporter_class, RegionExporter):
             # For region modes, we can apply mask cropping
+            self.exporter = exporter_class(batch_size=batch_size)
             dataset = self.exporter.process_dataset(
                 dataset=base_dataset,
                 mask=mask_crop,
@@ -323,16 +342,23 @@ class XmlConverter:
                 min_height=min_height,
             )
         else:
-            dataset = self.exporter.process_dataset(dataset=base_dataset)
+            # AIDEV-NOTE: mypy can't narrow exporter_class to a concrete type in else-branch; concrete classes are guaranteed by EXPORT_MODES
+            self.exporter = exporter_class(batch_size=batch_size)  # type: ignore[abstract]
+            if self.exporter:
+                dataset = self.exporter.process_dataset(dataset=base_dataset)
+            else:
+                raise ValueError(f"Exporter for mode {export_mode} could not be initialized")
 
         if dataset and self.stats_cache is None:
             logger.debug("Computing statistics...")
             self._compute_stats(dataset)
 
-        logger.info(f"Exported dataset")
+        logger.info("Exported dataset")
 
         if dataset and split_train and 0.0 < split_train < 1.0:
-            logger.info(f"Splitting dataset into train and test sets (train size={split_train})...")
+            logger.info(
+                f"Splitting dataset into train and test sets (train size={split_train})..."
+            )
             dataset = dataset.train_test_split(
                 train_size=split_train,
                 shuffle=split_shuffle,
@@ -348,14 +374,14 @@ class XmlConverter:
             raise ValueError("dataset is None after conversion")
 
     def upload_to_hub(
-            self,
-            dataset: Dataset | DatasetDict,
-            repo_id: str,
-            token: str = "",
-            private: bool = False,
-            commit_message: str = "Dataset created by pagexml-hf",
-            append: bool = False,
-            number_of_augmentations: int = 0,
+        self,
+        dataset: Dataset | DatasetDict,
+        repo_id: str,
+        token: str = "",
+        private: bool = False,
+        commit_message: str = "Dataset created by pagexml-hf",
+        append: bool = False,
+        number_of_augmentations: int = 0,
     ) -> str:
         """
         Upload dataset to HuggingFace Hub using parquet shards (memory efficient).
@@ -406,24 +432,24 @@ class XmlConverter:
         )
 
     def convert_and_upload(
-            self,
-            repo_id: str,
-            export_mode: str = "text",
-            token: str = "",
-            private: bool = False,
-            commit_message: str = "Add new data export",
-            batch_size: int = 32,
-            mask_crop: bool = False,
-            min_width: int = 0,
-            min_height: int = 0,
-            allow_empty: bool = False,
-            window_size: int = 2,
-            overlap: int = 0,
-            split_train: float = 1.0,
-            split_seed: int = 42,
-            split_shuffle: bool = False,
-            append: bool = False,
-            line_augment: int = 0,
+        self,
+        repo_id: str,
+        export_mode: str = "text",
+        token: str = "",
+        private: bool = False,
+        commit_message: str = "Add new data export",
+        batch_size: int = 32,
+        mask_crop: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
+        allow_empty: bool = False,
+        window_size: int = 2,
+        overlap: int = 0,
+        split_train: float = 1.0,
+        split_seed: int = 42,
+        split_shuffle: bool = False,
+        append: bool = False,
+        line_augment: int = 0,
     ) -> str:
         """
         Convert and upload in one step using parquet shards (memory efficient).
@@ -456,7 +482,9 @@ class XmlConverter:
             Repository URL
         """
         # Check feature compatibility BEFORE expensive data processing
-        logger.debug(f"Convert and upload with export_mode={export_mode}, append={append}")
+        logger.debug(
+            f"Convert and upload with export_mode={export_mode}, append={append}"
+        )
         if append:
             try:
                 self._check_exporter_feature_compatibility(

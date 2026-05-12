@@ -5,12 +5,13 @@ PyTest Configuration and Shared Fixtures
 This file contains shared fixtures and configuration for all tests.
 """
 
-import pytest
-import tempfile
-import shutil
-from pathlib import Path
-from PIL import Image
 import io
+import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
+from PIL import Image
 
 
 @pytest.fixture(scope="session")
@@ -24,9 +25,9 @@ def temp_dir():
 @pytest.fixture
 def sample_image_bytes():
     """Create sample image bytes for testing."""
-    img = Image.new('RGB', (100, 100), color='white')
+    img = Image.new("RGB", (100, 100), color="white")
     img_bytes_io = io.BytesIO()
-    img.save(img_bytes_io, format='JPEG')
+    img.save(img_bytes_io, format="JPEG")
     return img_bytes_io.getvalue()
 
 
@@ -68,13 +69,13 @@ def sample_coordinates():
 def sample_dataset_dict():
     """Sample dataset dictionary for testing."""
     return {
-        'image': [{'bytes': b'fake_image_1', 'path': None}],
-        'xml_content': ['<xml>content1</xml>'],
-        'filename': ['file1.xml'],
-        'project_name': ['test_project'],
-        'image_width': [1000],
-        'image_height': [1500],
-        'regions': [[]],
+        "image": [{"bytes": b"fake_image_1", "path": None}],
+        "xml_content": ["<xml>content1</xml>"],
+        "filename": ["file1.xml"],
+        "project_name": ["test_project"],
+        "image_width": [1000],
+        "image_height": [1500],
+        "regions": [[]],
     }
 
 
@@ -84,10 +85,5 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
-    config.addinivalue_line(
-        "markers", "unit: marks tests as unit tests"
-    )
-
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "unit: marks tests as unit tests")

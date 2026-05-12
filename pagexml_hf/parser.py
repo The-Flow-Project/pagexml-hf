@@ -8,14 +8,14 @@ import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any
-from loguru import logger
+from typing import Any, Optional, cast
 
 import chardet
 import datasets
 import lxml.etree as et
 import requests
 from datasets import load_dataset
+from loguru import logger
 
 
 @dataclass
@@ -24,8 +24,8 @@ class TextLine:
 
     id: str
     text: Optional[str]
-    coords: List[Tuple[int, int]]
-    baseline: Optional[List[Tuple[int, int]]]
+    coords: list[tuple[int, int]]
+    baseline: Optional[list[tuple[int, int]]]
     reading_order: int
     region_id: str
 
@@ -50,7 +50,7 @@ class XmlParser:
     """
 
     def __init__(self):
-        logger.info(f"Initializing XmlParser")
+        logger.info("Initializing XmlParser")
 
     def parse_zip(self, zip_path: str, parse_xml: bool = False):
         """
@@ -63,14 +63,15 @@ class XmlParser:
         Returns:
             Generator of page data
         """
-        logger.info(f"Parsing ZIP file: {str(zip_path)}")
+        zip_path = str(zip_path)
+        logger.info(f"Parsing ZIP file: {zip_path}")
 
         if zip_path.startswith("http://") or zip_path.startswith("https://"):
             try:
                 response = requests.get(zip_path, timeout=30)
                 response.raise_for_status()
                 zip_data_io = io.BytesIO(response.content)
-                zip_file = zipfile.ZipFile(zip_data_io, metadata_encoding='utf-8')
+                zip_file = zipfile.ZipFile(zip_data_io, metadata_encoding="utf-8")
             except requests.exceptions.Timeout as e:
                 raise ValueError(f"Download from {zip_path} timed out: {e}") from e
             except requests.exceptions.RequestException as e:
@@ -85,25 +86,27 @@ class XmlParser:
         # Open ZipFile
         with zip_file:
             # Get all files in the ZIP
-            file_list = zip_file.namelist()
+            file_list_raw = zip_file.namelist()
 
-            image_files = [
-                Path(f) for f in file_list
+            image_files: list[Path] = [
+                Path(f)
+                for f in file_list_raw
                 if f.lower().endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff"))
-                   and not self._is_macos_metadata_file(f)
+                and not self._is_macos_metadata_file(f)
             ]
 
             # remove image files from file_list (faster)
-            file_list = [
-                Path(f) for f in file_list
+            file_list: list[Path] = [
+                Path(f)
+                for f in file_list_raw
                 if f.lower().endswith(".xml")
-                   and not self._is_macos_metadata_file(f)
-                   and not self._is_metadata_file(f)
+                and not self._is_macos_metadata_file(f)
+                and not self._is_metadata_file(f)
             ]
             logger.debug(f"Found {len(file_list)} files, {len(image_files)} images")
 
             for xml_filename in file_list:
-                row = {}
+                row: dict[str, Any] = {}
                 logger.debug(f"Processing file: {str(xml_filename)}")
 
                 # Read the XML content and extract the project name
@@ -114,29 +117,40 @@ class XmlParser:
 
                 row["xml_content"] = xml_content
                 parent = xml_filename.parent
-                project_name = parent.name if parent.name != "page" else parent.parent.name
+                project_name = (
+                    parent.name if parent.name != "page" else parent.parent.name
+                )
                 row["project_name"] = project_name
 
                 # Find the matching image in the file list
-                imagepath = next((i for i in image_files if i.stem in str(xml_filename)), None)
+                imagepath = next(
+                    (i for i in image_files if i.stem == xml_filename.stem), None
+                )
                 row["image"] = None
 
                 try:
                     logger.debug(f"Parsing image: {str(xml_filename)}")
                     page_data = self._parse_page_xml(xml_content)
 
-                    if parse_xml:
-                        row["regions"] = page_data["regions"]
-                        row["image_width"] = page_data["image_width"]
-                        row["image_height"] = page_data["image_height"]
+                    if page_data:
+                        if parse_xml:
+                            row["regions"] = page_data["regions"]
+                            row["image_width"] = page_data["image_width"]
+                            row["image_height"] = page_data["image_height"]
 
-                    # First strategy: Get image from URL in XML
-                    if imagepath is None and "image_url" in page_data:
-                        img_bytes = self._get_image_from_url(page_data["image_url"])
-                        row["image"] = {"bytes": img_bytes, "path": None}
-                        row["filename"] = page_data["image_filename"]
+                        # First strategy: Get image from URL in XML
+                        if imagepath is None and "image_url" in page_data:
+                            img_bytes = self._get_image_from_url(page_data["image_url"])
+                            row["image"] = {"bytes": img_bytes, "path": None}
+                            row["filename"] = page_data["image_filename"]
+                        elif imagepath is not None:
+                            row["filename"] = imagepath.name
+                        else:
+                            raise ValueError(
+                                f"Failed to parse image: {str(xml_filename)}"
+                            )
                     else:
-                        row["filename"] = imagepath.name
+                        raise ValueError(f"Failed to parse image: {str(xml_filename)}")
 
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
@@ -154,8 +168,8 @@ class XmlParser:
                         continue
 
                 if row["image"] is None:
-                    logger.debug(f"image is None")
-                    logger.error(f"Failed to attach image: {e}")
+                    logger.debug("image is None")
+                    logger.error(f"Failed to attach image: {str(xml_filename)}")
                     continue
 
                 logger.debug(f"Got row: {list(row.keys())}")
@@ -179,18 +193,25 @@ class XmlParser:
 
         folder = Path(folder_path)
         filelist = [
-            p for p in folder.rglob("*")
+            p
+            for p in folder.rglob("*")
             if p.is_file()
-               and not self._is_metadata_file(str(p))
-               and not self._is_macos_metadata_file(str(p))
+            and not self._is_metadata_file(str(p))
+            and not self._is_macos_metadata_file(str(p))
         ]
         xml_files = [f for f in filelist if f.suffix.lower() == ".xml"]
-        image_files = [i for i in filelist if i.suffix.lower() in [".jpg", ".jpeg", ".png", ".tif", ".tiff"]]
+        image_files = [
+            i
+            for i in filelist
+            if i.suffix.lower() in [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
+        ]
 
-        logger.info(f"Found {len(xml_files)} XML files and {len(image_files)} images in {folder_path}")
+        logger.info(
+            f"Found {len(xml_files)} XML files and {len(image_files)} images in {folder_path}"
+        )
 
         for xml_filename in xml_files:
-            row = {}
+            row: dict[str, Any | None] = {}
             logger.debug(f"Processing file: {str(xml_filename)}")
 
             # Extract xml content
@@ -205,21 +226,33 @@ class XmlParser:
             project_name = parent.name if parent.name != "page" else parent.parent.name
             row["project_name"] = project_name
 
-            imagepath = next((i.absolute() for i in image_files if i.stem in str(xml_filename)), None)
+            imagepath = next(
+                (i.absolute() for i in image_files if i.stem == xml_filename.stem), None
+            )
             row["image"] = None
 
             if parse_xml or imagepath is None:
                 try:
                     page_data = self._parse_page_xml(xml_content)
-                    if parse_xml:
-                        row["regions"] = page_data["regions"]
-                        row["image_width"] = page_data["image_width"]
-                        row["image_height"] = page_data["image_height"]
-                    if imagepath is None:
-                        row["image"] = self._get_image_from_url(page_data["image_url"])
-                        row["filename"] = page_data["image_filename"]
+                    if page_data:
+                        if parse_xml:
+                            row["regions"] = page_data["regions"]
+                            row["image_width"] = page_data["image_width"]
+                            row["image_height"] = page_data["image_height"]
+                        if imagepath is None:
+                            img_bytes = self._get_image_from_url(page_data["image_url"])
+                            row["image"] = (
+                                {"bytes": img_bytes, "path": None}
+                                if img_bytes
+                                else None
+                            )
+                            row["filename"] = page_data["image_filename"]
+                        else:
+                            row["filename"] = imagepath.name
                     else:
-                        row["filename"] = imagepath.name
+                        raise Exception(
+                            f"Failed to parse xml file: {str(xml_filename)}"
+                        )
                 except Exception as e:
                     logger.error(f"Error parsing page {str(xml_filename)}: {e}")
                     continue
@@ -233,16 +266,18 @@ class XmlParser:
                     logger.error(f"Failed to attach image: {e}")
                     continue
             if row["image"] is None:
-                logger.error(f"Failed to attach image from xml file: {str(xml_filename)}")
+                logger.error(
+                    f"Failed to attach image from xml file: {str(xml_filename)}"
+                )
                 continue
 
             yield row
 
     def parse_dataset(
-            self,
-            dataset: Union[str, datasets.Dataset],
-            token: str | None = None,
-            parse_xml: bool = False,
+        self,
+        dataset: str | datasets.Dataset,
+        token: str | None = None,
+        parse_xml: bool = False,
     ):
         """
         Parse a HuggingFace dataset containing PAGE XML files.
@@ -262,10 +297,8 @@ class XmlParser:
             try:
                 ds = load_dataset(dataset, split="train", token=token, streaming=True)
             except Exception as e:
-                raise ValueError(
-                    f"Failed to load dataset {dataset}: {e} \
-                        (did you set a token for private datasets?)"
-                ) from e
+                raise ValueError(f"Failed to load dataset {dataset}: {e} \
+                        (did you set a token for private datasets?)") from e
         elif isinstance(dataset, datasets.Dataset):
             ds = dataset
         else:
@@ -333,18 +366,18 @@ class XmlParser:
             with open(file_path, "rb") as f:
                 raw_content = f.read()
             return self._decode_bytes(raw_content, file_path)
-        except (OSError, IOError, UnicodeDecodeError) as err:
+        except (OSError, UnicodeDecodeError) as err:
             logger.error(f"Error reading {file_path}: {err}")
             return None
 
     def _read_xml_with_encoding(
-            self, zip_file: zipfile.ZipFile, xml_filename: str
+        self, zip_file: zipfile.ZipFile, xml_filename: str
     ) -> str | None:
         """Read XML content with automatic encoding detection and fallback."""
         try:
             raw_content = zip_file.read(xml_filename)
             return self._decode_bytes(raw_content, xml_filename)
-        except (KeyError, OSError, IOError, zipfile.BadZipFile, zipfile.LargeZipFile) as e:
+        except (KeyError, OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as e:
             logger.error(f"Error reading {xml_filename}: {e}")
             return None
 
@@ -381,21 +414,18 @@ class XmlParser:
             return True
 
         # Skip other common macOS metadata patterns
-        if "/." in file_path and not file_path.endswith(".xml"):
-            return True
-
-        return False
+        return "/." in file_path and not file_path.endswith(".xml")
 
     @staticmethod
     def _is_metadata_file(file_path: str) -> bool:
         """Check if a file is a metadata file that should be skipped."""
         base = os.path.basename(file_path)
-        return base.lower() in ['mets.xml', 'metadata.xml']
+        return base.lower() in ["mets.xml", "metadata.xml"]
 
-    def _parse_page_xml(self, xml_content: str) -> Dict | None:
+    def _parse_page_xml(self, xml_content: str) -> dict | None:
         """Parse a single PAGE XML file."""
         try:
-            logger.debug(f"Parsing XML content")
+            logger.debug("Parsing XML content")
 
             # Normalize the encoding declaration to UTF-8 before re-encoding.
             # When XML content was decoded from a non-UTF-8 source (e.g.
@@ -416,11 +446,12 @@ class XmlParser:
                     encoding="utf-8",
                     ns_clean=True,
                     compact=False,
-                )
+                ),
             )
             root = tree.getroot()
             logger.debug(f"DefaultNamespace: {root.nsmap.get(None)}")
-            self.namespace = {'pc': root.nsmap.get(None)}
+            # AIDEV-NOTE: nsmap.get(None) returns str|None; default to "" to satisfy Mapping[str, str]
+            self.namespace: dict[str, str] = {"pc": root.nsmap.get(None, "")}
             logger.debug(f"Namespace: {self.namespace}")
 
             # Get page element
@@ -453,14 +484,14 @@ class XmlParser:
             logger.error(f"XML parsing error: {e}")
             return None
 
-    def _parse_reading_order(self, root: et.Element) -> Dict[str, int]:
+    def _parse_reading_order(self, root: et._Element) -> dict[str, int]:
         """Parse the reading order from the XML."""
         reading_order = {}
 
         reading_order_elem = root.find(".//pc:ReadingOrder", self.namespace)
         if reading_order_elem is not None:
             for region_ref in reading_order_elem.findall(
-                    ".//pc:RegionRefIndexed", self.namespace
+                ".//pc:RegionRefIndexed", self.namespace
             ):
                 region_id = region_ref.get("regionRef", "")
                 index = int(region_ref.get("index", 0))
@@ -469,8 +500,8 @@ class XmlParser:
         return reading_order
 
     def _parse_text_regions(
-            self, root: et.Element, reading_order: Dict[str, int]
-    ) -> List[Dict[str, Any]]:
+        self, root: et._Element, reading_order: dict[str, int]
+    ) -> list[dict[str, Any]]:
         """Parse all text regions from the XML."""
         regions = []
 
@@ -479,16 +510,20 @@ class XmlParser:
             region_type = region_elem.get("type", "paragraph")
 
             # Parse coordinates
-            coords: List[List[int]] = self._parse_coords(region_elem.find("pc:Coords", self.namespace))
+            coords: list[list[int]] = self._parse_coords(
+                region_elem.find("pc:Coords", self.namespace)
+            )
 
             # Parse text lines
-            text_lines: List[Dict[str, Any]] = self._parse_text_lines(region_elem, region_id)
+            text_lines: list[dict[str, Any]] = self._parse_text_lines(
+                region_elem, region_id
+            )
 
             # Get full text from TextEquiv
             full_text: str = self._get_text_equiv(region_elem)
 
             # Get reading order
-            region_reading_order: int = reading_order.get("region_id", 0)
+            region_reading_order: int = reading_order.get(region_id, 0)
 
             region = {
                 "id": region_id,
@@ -502,13 +537,13 @@ class XmlParser:
             regions.append(region)
 
         # Sort regions by reading order
-        regions.sort(key=lambda r: r["reading_order"])
+        regions.sort(key=lambda r: cast(int, r["reading_order"]))
 
         return regions
 
     def _parse_text_lines(
-            self, region_elem: et.Element, region_id: str
-    ) -> List[Dict[str, Any]]:
+        self, region_elem: et._Element, region_id: str
+    ) -> list[dict[str, Any]]:
         """Parse text lines within a region."""
         lines = []
 
@@ -542,39 +577,46 @@ class XmlParser:
             lines.append(line)
 
         # Sort lines by reading order
-        lines.sort(key=lambda ln: ln["reading_order"])
+        lines.sort(key=lambda ln: cast(int, ln["reading_order"]))
 
         return lines
 
-    def _parse_imgurl(self, root: et.Element) -> str | None:
+    def _parse_imgurl(self, root: et._Element) -> str | None:
         """Parse image URL from the PAGE XML."""
         img_url_elem = root.find(".//pc:TranskribusMetadata", self.namespace)
         # If from Transkribus, the image URL might be in the TranskribusMetadata element
-        image_url = img_url_elem.get("imgUrl") if img_url_elem is not None else None
+        image_url: str | None = (
+            img_url_elem.get("imgUrl") if img_url_elem is not None else None
+        )
         # If not found, try to get it from the Page element
         if not image_url:
             page_elem = root.find("pc:Page", self.namespace)
-            image_url = page_elem.get("imageURL", None)
+            image_url = page_elem.get("imageURL", None) if page_elem is not None else None
 
         return image_url
 
     @staticmethod
     def _get_image_from_url(image_url: str) -> bytes | None:
-        if image_url and (image_url.startswith("http") or image_url.startswith("https")):
+        if image_url and (
+            image_url.startswith("http") or image_url.startswith("https")
+        ):
             try:
                 response = requests.get(image_url, timeout=20)
                 response.raise_for_status()
-                return response.content
+                if isinstance(response.content, bytes):
+                    return response.content
+                else:
+                    return None
             except requests.exceptions.Timeout:
-                logger.error(f'Image download from {image_url} timed out')
+                logger.error(f"Image download from {image_url} timed out")
                 return None
             except requests.exceptions.RequestException as e:
-                logger.error(f'Image download from {image_url} failed: {e}')
+                logger.error(f"Image download from {image_url} failed: {e}")
                 return None
         return None
 
     @staticmethod
-    def _parse_coords(coords_elem: Optional[et.Element]) -> List[List[int]]:
+    def _parse_coords(coords_elem: Optional[et._Element]) -> list[list[int]]:
         """Parse coordinates from a Coords element."""
         if coords_elem is None:
             return []
@@ -586,12 +628,16 @@ class XmlParser:
         coords = []
         for point in points_str.split():
             if "," in point:
-                x, y = point.split(",")
+                parts = point.split(",")
+                if len(parts) != 2:
+                    logger.warning(f"Skipping malformed coordinate point: {point!r}")
+                    continue
+                x, y = parts
                 coords.append([int(x), int(y)])
 
         return coords
 
-    def _get_text_equiv(self, element: et.Element) -> str:
+    def _get_text_equiv(self, element: et._Element) -> str:
         unicode_el = element.find("pc:TextEquiv/pc:Unicode", self.namespace)
         if unicode_el is not None and unicode_el.text:
             return unicode_el.text.strip()
@@ -600,15 +646,12 @@ class XmlParser:
         if not lines:
             return ""
 
-        line_texts = [
-            self._get_text_equiv(line).strip()
-            for line in lines
-        ]
+        line_texts = [self._get_text_equiv(line).strip() for line in lines]
 
         return "\n".join(line_texts)
 
     @staticmethod
-    def _extract_reading_order_from_custom(element: et.Element) -> int:
+    def _extract_reading_order_from_custom(element: et._Element) -> int:
         """Extract reading order from custom attribute."""
         custom = element.get("custom", "")
         if "readingOrder" in custom:

@@ -7,10 +7,10 @@ import pytest
 from datasets import Features
 
 from pagexml_hf.exporters import (
-    RawXMLExporter,
-    TextExporter,
-    RegionExporter,
     LineExporter,
+    RawXMLExporter,
+    RegionExporter,
+    TextExporter,
     WindowExporter,
 )
 
@@ -20,51 +20,73 @@ class TestExporterFeatures:
 
     def test_raw_xml_exporter_has_post_features(self):
         """Test RawXMLExporter has POST_FEATURES."""
-        assert hasattr(RawXMLExporter, 'POST_FEATURES')
+        assert hasattr(RawXMLExporter, "POST_FEATURES")
         assert isinstance(RawXMLExporter.POST_FEATURES, Features)
 
-        expected_keys = {'image', 'xml_content', 'filename', 'project_name'}
+        expected_keys = {"image", "xml_content", "filename", "project_name"}
         assert set(RawXMLExporter.POST_FEATURES.keys()) == expected_keys
 
     def test_text_exporter_has_post_features(self):
         """Test TextExporter has POST_FEATURES."""
-        assert hasattr(TextExporter, 'POST_FEATURES')
+        assert hasattr(TextExporter, "POST_FEATURES")
         assert isinstance(TextExporter.POST_FEATURES, Features)
 
-        expected_keys = {'image', 'text', 'filename', 'project_name'}
+        expected_keys = {"image", "text", "filename", "project_name"}
         assert set(TextExporter.POST_FEATURES.keys()) == expected_keys
 
     def test_region_exporter_has_post_features(self):
         """Test RegionExporter has POST_FEATURES."""
-        assert hasattr(RegionExporter, 'POST_FEATURES')
+        assert hasattr(RegionExporter, "POST_FEATURES")
         assert isinstance(RegionExporter.POST_FEATURES, Features)
 
         expected_keys = {
-            'image', 'text', 'region_id', 'region_reading_order',
-            'region_type', 'filename', 'project_name'
+            "image",
+            "text",
+            "region_id",
+            "region_reading_order",
+            "region_type",
+            "region_coords",
+            "filename",
+            "project_name",
         }
         assert set(RegionExporter.POST_FEATURES.keys()) == expected_keys
 
     def test_line_exporter_has_post_features(self):
         """Test LineExporter has POST_FEATURES."""
-        assert hasattr(LineExporter, 'POST_FEATURES')
+        assert hasattr(LineExporter, "POST_FEATURES")
         assert isinstance(LineExporter.POST_FEATURES, Features)
 
         expected_keys = {
-            'image', 'text', 'line_id', 'line_reading_order',
-            'region_id', 'region_reading_order', 'region_type',
-            'filename', 'project_name'
+            "image",
+            "text",
+            "line_id",
+            "line_reading_order",
+            "line_coords",
+            "line_baseline",
+            "line_augmentation",
+            "region_id",
+            "region_reading_order",
+            "region_type",
+            "region_coords",
+            "filename",
+            "project_name",
         }
         assert set(LineExporter.POST_FEATURES.keys()) == expected_keys
 
     def test_window_exporter_has_post_features(self):
         """Test WindowExporter has POST_FEATURES."""
-        assert hasattr(WindowExporter, 'POST_FEATURES')
+        assert hasattr(WindowExporter, "POST_FEATURES")
         assert isinstance(WindowExporter.POST_FEATURES, Features)
 
         expected_keys = {
-            'image', 'text', 'window_size', 'window_index',
-            'line_ids', 'line_reading_order', 'filename', 'project_name'
+            "image",
+            "text",
+            "window_size",
+            "window_index",
+            "line_ids",
+            "line_reading_order",
+            "filename",
+            "project_name",
         }
         assert set(WindowExporter.POST_FEATURES.keys()) == expected_keys
 
@@ -123,16 +145,15 @@ class TestExporterModes:
         from pagexml_hf.converter import XmlConverter
 
         expected_modes = {
-            'raw_xml': RawXMLExporter,
-            'text': TextExporter,
-            'region': RegionExporter,
-            'line': LineExporter,
-            'window': WindowExporter,
+            "raw_xml": RawXMLExporter,
+            "text": TextExporter,
+            "region": RegionExporter,
+            "line": LineExporter,
+            "window": WindowExporter,
         }
 
-        assert XmlConverter.EXPORT_MODES == expected_modes
+        assert expected_modes == XmlConverter.EXPORT_MODES
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
-
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
