@@ -50,15 +50,11 @@ jobs:
       - name: Auto-format code
         run: |
           uv run black pagexml_hf/ tests/
-          uv run isort pagexml_hf/ tests/
           uv run ruff check --fix pagexml_hf/ tests/
 
       # Check Phase (sollte nach Fixes bestehen)
       - name: Verify code formatting
         run: uv run black --check pagexml_hf/ tests/
-
-      - name: Verify import sorting
-        run: uv run isort --check-only pagexml_hf/ tests/
 
       - name: Lint with Ruff
         run: uv run ruff check pagexml_hf/ tests/

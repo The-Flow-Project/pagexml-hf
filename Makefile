@@ -29,7 +29,7 @@ help:
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint          - Run all linters (ruff, mypy)"
-	@echo "  make format        - Format code with black and isort"
+	@echo "  make format        - Format code with black"
 	@echo "  make fix           - Auto-fix linting issues"
 	@echo "  make check         - Run format check without modifying files"
 	@echo ""

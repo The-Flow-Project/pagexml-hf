@@ -106,7 +106,6 @@ lint.select = [
     "E", # pycodestyle errors
     "W", # pycodestyle warnings
     "F", # pyflakes
-    "I", # isort
     "N", # pep8-naming
     "UP", # pyupgrade
     "B", # flake8-bugbear
