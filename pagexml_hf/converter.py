@@ -28,9 +28,6 @@ from .exporters import (
 )
 from .hub_utils import HubUploader
 
-# Disable dataset caching to force rebuilding each time
-disable_caching()
-
 
 class XmlConverter:
     """
@@ -95,6 +92,7 @@ class XmlConverter:
             source_type (str, optional): Source type for the data to convert.
         """
 
+        disable_caching()
         self.gen_func = gen_func
         self.gen_kwargs = gen_kwargs
         self.exporter: BaseExporter | None = None
@@ -298,8 +296,9 @@ class XmlConverter:
         logger.debug("#" * 80)
 
         # Handle both zip and folder path for exporters
+        # AIDEV-NOTE: exporter_class is the class itself (not an instance); use issubclass, not isinstance
         exporter_class = self.EXPORT_MODES[export_mode]
-        if export_mode == "window" and isinstance(exporter_class, WindowExporter):
+        if export_mode == "window" and issubclass(exporter_class, WindowExporter):
             logger.info(
                 f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})."
             )
@@ -312,7 +311,7 @@ class XmlConverter:
             logger.info(f"Converting to {export_mode} format...")
 
         # Export dataset
-        if export_mode == "line" and isinstance(exporter_class, LineExporter):
+        if export_mode == "line" and issubclass(exporter_class, LineExporter):
             self.exporter = exporter_class(batch_size=batch_size)
             if line_augment and line_augment < 0:
                 logger.warning(f"line_augment={line_augment} is invalid; setting to 0")
@@ -331,7 +330,7 @@ class XmlConverter:
                 allow_empty=allow_empty,
                 line_augment=line_augment,
             )
-        elif export_mode == "region" and isinstance(exporter_class, RegionExporter):
+        elif export_mode == "region" and issubclass(exporter_class, RegionExporter):
             # For region modes, we can apply mask cropping
             self.exporter = exporter_class(batch_size=batch_size)
             dataset = self.exporter.process_dataset(
@@ -349,13 +348,16 @@ class XmlConverter:
             else:
                 raise ValueError(f"Exporter for mode {export_mode} could not be initialized")
 
-        if dataset and self.stats_cache is None:
+        # AIDEV-NOTE: from_generator always writes Arrow files regardless of disable_caching(); clean up now that the exporter is done with it
+        base_dataset.cleanup_cache_files()
+
+        if dataset is not None and self.stats_cache is None:
             logger.debug("Computing statistics...")
             self._compute_stats(dataset)
 
         logger.info("Exported dataset")
 
-        if dataset and split_train and 0.0 < split_train < 1.0:
+        if dataset is not None and split_train and 0.0 < split_train < 1.0:
             logger.info(
                 f"Splitting dataset into train and test sets (train size={split_train})..."
             )
@@ -368,7 +370,7 @@ class XmlConverter:
                 f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}"
             )
 
-        if dataset:
+        if dataset is not None:
             return dataset
         else:
             raise ValueError("dataset is None after conversion")
@@ -512,10 +514,7 @@ class XmlConverter:
             line_augment=line_augment,
         )
 
-        # cache_files_deleted = dataset.cleanup_cache_files()
-        # logger.debug(f"Number of cache files deleted: {cache_files_deleted}")
-
-        return self.upload_to_hub(
+        url = self.upload_to_hub(
             dataset=dataset,
             repo_id=repo_id,
             token=token,
@@ -524,3 +523,11 @@ class XmlConverter:
             append=append,
             number_of_augmentations=line_augment,
         )
+
+        if isinstance(dataset, DatasetDict):
+            for split_ds in dataset.values():
+                split_ds.cleanup_cache_files()
+        else:
+            dataset.cleanup_cache_files()
+
+        return url

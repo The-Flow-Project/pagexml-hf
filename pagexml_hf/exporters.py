@@ -5,7 +5,7 @@ Exporters for converting parsed Transkribus data to different HuggingFace datase
 import json
 from abc import ABC, abstractmethod
 
-from datasets import Dataset, Features, List, Value
+from datasets import Dataset, Features, List, Value, disable_caching
 from datasets import Image as DatasetImage
 from loguru import logger
 from PIL import ImageFile
@@ -27,6 +27,7 @@ class BaseExporter(ABC):
         self,
         batch_size: int = 32,
     ):
+        disable_caching()
         self.batch_size: int = batch_size
 
     @abstractmethod

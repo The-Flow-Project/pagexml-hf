@@ -14,7 +14,7 @@ import chardet
 import datasets
 import lxml.etree as et
 import requests
-from datasets import load_dataset
+from datasets import load_dataset, disable_caching
 from loguru import logger
 
 
@@ -51,6 +51,7 @@ class XmlParser:
 
     def __init__(self):
         logger.info("Initializing XmlParser")
+        disable_caching()
 
     def parse_zip(self, zip_path: str, parse_xml: bool = False):
         """
