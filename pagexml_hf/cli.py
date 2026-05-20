@@ -278,7 +278,7 @@ def main():
     # Initialize parser
     xmlparser = XmlParser()
 
-    parse_xml: bool = False
+    parse_xml = False
     if args.mode in ["line", "region", "text", "window"]:
         parse_xml = True
 

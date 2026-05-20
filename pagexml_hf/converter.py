@@ -296,23 +296,14 @@ class XmlConverter:
         logger.debug("#" * 80)
 
         # Handle both zip and folder path for exporters
-        # AIDEV-NOTE: exporter_class is the class itself (not an instance); use issubclass, not isinstance
+        # AIDEV-NOTE: concrete exporter types are used directly per branch — mypy cannot narrow via issubclass()
         exporter_class = self.EXPORT_MODES[export_mode]
-        if export_mode == "window" and issubclass(exporter_class, WindowExporter):
-            logger.info(
-                f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})."
-            )
-            self.exporter = exporter_class(
-                batch_size=batch_size,
-                window_size=window_size,
-                overlap=overlap,
-            )
-        else:
-            logger.info(f"Converting to {export_mode} format...")
 
         # Export dataset
-        if export_mode == "line" and issubclass(exporter_class, LineExporter):
-            self.exporter = exporter_class(batch_size=batch_size)
+        if export_mode == "line":
+            logger.info(f"Converting to {export_mode} format...")
+            line_exporter = LineExporter(batch_size=batch_size)
+            self.exporter = line_exporter
             if line_augment and line_augment < 0:
                 logger.warning(f"line_augment={line_augment} is invalid; setting to 0")
                 line_augment = 0
@@ -322,7 +313,7 @@ class XmlConverter:
                 )
                 line_augment = 5
             # For line modes, we can apply mask cropping and augmentation
-            dataset = self.exporter.process_dataset(
+            dataset = line_exporter.process_dataset(
                 dataset=base_dataset,
                 mask=mask_crop,
                 min_width=min_width,
@@ -330,17 +321,31 @@ class XmlConverter:
                 allow_empty=allow_empty,
                 line_augment=line_augment,
             )
-        elif export_mode == "region" and issubclass(exporter_class, RegionExporter):
+        elif export_mode == "region":
+            logger.info(f"Converting to {export_mode} format...")
             # For region modes, we can apply mask cropping
-            self.exporter = exporter_class(batch_size=batch_size)
-            dataset = self.exporter.process_dataset(
+            region_exporter = RegionExporter(batch_size=batch_size)
+            self.exporter = region_exporter
+            dataset = region_exporter.process_dataset(
                 dataset=base_dataset,
                 mask=mask_crop,
                 allow_empty=allow_empty,
                 min_width=min_width,
                 min_height=min_height,
             )
+        elif export_mode == "window":
+            logger.info(
+                f"Converting to {export_mode} format (window_size={window_size}, overlap={overlap})."
+            )
+            window_exporter = WindowExporter(
+                batch_size=batch_size,
+                window_size=window_size,
+                overlap=overlap,
+            )
+            self.exporter = window_exporter
+            dataset = window_exporter.process_dataset(dataset=base_dataset)
         else:
+            logger.info(f"Converting to {export_mode} format...")
             # AIDEV-NOTE: mypy can't narrow exporter_class to a concrete type in else-branch; concrete classes are guaranteed by EXPORT_MODES
             self.exporter = exporter_class(batch_size=batch_size)  # type: ignore[abstract]
             if self.exporter:
