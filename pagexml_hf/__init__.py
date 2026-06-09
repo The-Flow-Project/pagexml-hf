@@ -13,7 +13,7 @@ from .exporters import (
 from .logger import setup_logger
 from .parser import XmlParser
 
-__version__ = "0.9.5+fork.1"
+__version__ = "0.9.6+fork.1"
 __license__ = "MIT"
 __authors__ = ["wjbmattingly", "jnswidmer"]
 
