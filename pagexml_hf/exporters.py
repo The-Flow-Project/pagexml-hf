@@ -354,7 +354,7 @@ class LineExporter(BaseExporter):
                         )
                         if cropped_image:
                             augmented_cropped_images.append(
-                                (image_processor.encode_image(cropped_image), "{}")
+                                (image_processor.encode_image(cropped_image), "original")
                             )
                         if line_augment and line_augment > 0 and cropped_image:
                             for _ in range(line_augment):
