@@ -296,7 +296,7 @@ class XmlParser:
         logger.info(f"Loading dataset {dataset}...")
         if isinstance(dataset, str):
             try:
-                ds = load_dataset(dataset, split="train", token=token, streaming=True)
+                ds = load_dataset(dataset, split="train", token=token, streaming=True, download_mode='force_redownload')
             except Exception as e:
                 raise ValueError(f"Failed to load dataset {dataset}: {e} \
                         (did you set a token for private datasets?)") from e

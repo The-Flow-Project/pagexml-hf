@@ -225,7 +225,7 @@ class XmlConverter:
 
         # Load existing dataset features
         try:
-            existing_ds = load_dataset(repo_id, split="train", streaming=True)
+            existing_ds = load_dataset(repo_id, split="train", streaming=True, download_mode='force_redownload')
             existing_features = getattr(existing_ds, "features", None)
 
             if existing_features:
