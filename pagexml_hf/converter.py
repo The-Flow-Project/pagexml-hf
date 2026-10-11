@@ -2,6 +2,7 @@
 Main converter class for Transkribus to HuggingFace datasets.
 """
 
+import random
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +251,86 @@ class XmlConverter:
             logger.warning(f"Could not verify features: {e}")
             logger.info("Proceeding with data processing (feature check inconclusive)")
 
+    SPLIT_GROUP_COLUMNS: dict[str, tuple[str, ...]] = {
+        "page": ("project_name", "filename"),
+        "project": ("project_name",),
+    }
+
+    @classmethod
+    def _split_dataset(
+        cls,
+        dataset: Dataset,
+        train_size: float,
+        shuffle: bool,
+        seed: int,
+        group_by: str | None = "page",
+    ) -> DatasetDict:
+        """
+        Split a dataset into 'train' and 'test'.
+
+        With ``group_by`` set, whole groups (pages or projects) are assigned to one
+        side, so lines of the same page and augmented copies of the same line never
+        appear in both splits. Groups are taken whole until the train side holds at
+        least ``train_size`` of the rows, so the ratio is approximate. Falls back to a
+        plain row split when grouping is disabled, the grouping columns are missing,
+        or there are fewer than two groups.
+        """
+        if group_by is None:
+            return dataset.train_test_split(
+                train_size=train_size, shuffle=shuffle, seed=seed
+            )
+        if group_by not in cls.SPLIT_GROUP_COLUMNS:
+            raise ValueError(
+                f"Invalid split_group_by: {group_by!r}. "
+                f"Available: {list(cls.SPLIT_GROUP_COLUMNS)} or None"
+            )
+
+        columns = cls.SPLIT_GROUP_COLUMNS[group_by]
+        missing = [c for c in columns if c not in dataset.column_names]
+        if missing:
+            logger.warning(
+                f"Cannot group split by {group_by}: missing columns {missing}; "
+                "falling back to row-level split"
+            )
+            return dataset.train_test_split(
+                train_size=train_size, shuffle=shuffle, seed=seed
+            )
+
+        groups: dict[tuple, list[int]] = {}
+        for idx, key in enumerate(zip(*(dataset[c] for c in columns))):
+            groups.setdefault(key, []).append(idx)
+
+        if len(groups) < 2:
+            logger.warning(
+                f"Only {len(groups)} {group_by} group found; "
+                "falling back to row-level split"
+            )
+            return dataset.train_test_split(
+                train_size=train_size, shuffle=shuffle, seed=seed
+            )
+
+        order = list(groups)
+        if shuffle:
+            random.Random(seed).shuffle(order)
+
+        target_rows = train_size * len(dataset)
+        train_rows = 0
+        cut = 0
+        for cut, key in enumerate(order):
+            # keep at least one group on each side
+            if cut > 0 and (train_rows >= target_rows or cut == len(order) - 1):
+                break
+            train_rows += len(groups[key])
+
+        train_idx = sorted(i for key in order[:cut] for i in groups[key])
+        test_idx = sorted(i for key in order[cut:] for i in groups[key])
+        logger.info(
+            f"Grouped split by {group_by}: {cut} train / {len(order) - cut} test groups"
+        )
+        return DatasetDict(
+            {"train": dataset.select(train_idx), "test": dataset.select(test_idx)}
+        )
+
     def convert(
         self,
         export_mode: str = "text",
@@ -264,6 +345,7 @@ class XmlConverter:
         min_height: int = 0,
         allow_empty: bool = False,
         line_augment: int = 0,
+        split_group_by: str | None = "page",
     ) -> Dataset | DatasetDict:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -283,6 +365,11 @@ class XmlConverter:
                 (only for region and line mode)
             allow_empty: Whether to allow empty elements in the output (default: False)
             line_augment: Amount of random augmentation iterations on the original image (default: None)
+            split_group_by: Keep all rows of the same source together when splitting, so that
+                no page (or project) ends up in both train and test. 'page' groups by
+                (project_name, filename), 'project' by project_name, None splits individual
+                rows (previous behaviour; lines of one page and augmented copies of one line
+                can land in both splits).
         Returns:
             HuggingFace Dataset
         """
@@ -366,10 +453,12 @@ class XmlConverter:
             logger.info(
                 f"Splitting dataset into train and test sets (train size={split_train})..."
             )
-            dataset = dataset.train_test_split(
+            dataset = self._split_dataset(
+                dataset,
                 train_size=split_train,
                 shuffle=split_shuffle,
                 seed=split_seed,
+                group_by=split_group_by,
             )
             logger.info(
                 f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}"
@@ -457,6 +546,7 @@ class XmlConverter:
         split_shuffle: bool = False,
         append: bool = False,
         line_augment: int = 0,
+        split_group_by: str | None = "page",
     ) -> str:
         """
         Convert and upload in one step using parquet shards (memory efficient).
@@ -485,6 +575,7 @@ class XmlConverter:
                    If False, overwrite all existing data. Default: False
             line_augment: Amount of random augmentations of line images \
                 (only for line mode)
+            split_group_by: 'page', 'project' or None; see :meth:`convert`
         Returns:
             Repository URL
         """
@@ -517,6 +608,7 @@ class XmlConverter:
             split_seed=split_seed,
             split_shuffle=split_shuffle,
             line_augment=line_augment,
+            split_group_by=split_group_by,
         )
 
         url = self.upload_to_hub(

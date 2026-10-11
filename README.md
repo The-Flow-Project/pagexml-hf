@@ -20,7 +20,7 @@ It is a fork of the original `transkribus-hf` package by wjbmattingly (https://g
 - **Windowed Extraction**: Create sliding windows of multiple lines for data augmentation
 - **Preserves Metadata**: Maintains reading order, region types, and other important metadata
 - **Command Line Interface**: Easy-to-use CLI for batch processing
-- **Train-Test Split**: Supports train-test splits for dataset creation
+- **Train-Test Split**: Supports train-test splits for dataset creation; pages are kept whole (no page, and no augmented copy of a line, appears in both splits)
 
 ## Installation
 
@@ -156,6 +156,9 @@ pagexml-hf path/to/your/transkribus.zip --repo-id username/dataset-name --token 
 
 # Train-test split
 pagexml-hf path/to/your/transkribus.zip --repo-id username/dataset-name --split_train 0.8 --split_shuffle --split_seed 42
+
+# Group the split by project instead of page, or split individual rows (legacy)
+# --split-group-by project | --split-group-by none
 ```
 
 ### Python API
