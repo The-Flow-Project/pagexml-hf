@@ -142,6 +142,14 @@ def main():
         action="store_true",
         help="Shuffle the dataset before splitting (default: False)",
     )
+    parser.add_argument(
+        "--split-group-by",
+        choices=["page", "project", "none"],
+        default="page",
+        help="Keep all rows of one page/project in the same split so that no "
+        "source appears in both train and test (default: page). "
+        "'none' splits individual rows.",
+    )
     # ################ - end split arguments - ####################
 
     # ################ - operational arguments - ####################
@@ -325,6 +333,7 @@ def main():
                 split_train=args.split_train,
                 split_seed=args.split_seed,
                 split_shuffle=args.split_shuffle,
+                split_group_by=None if args.split_group_by == "none" else args.split_group_by,
                 mask_crop=args.mask_crop,
                 min_width=args.min_width,
                 min_height=args.min_height,
@@ -366,6 +375,7 @@ def main():
                 split_train=args.split_train,
                 split_seed=args.split_seed,
                 split_shuffle=args.split_shuffle,
+                split_group_by=None if args.split_group_by == "none" else args.split_group_by,
                 mask_crop=args.mask_crop,
                 min_width=args.min_width,
                 min_height=args.min_height,
