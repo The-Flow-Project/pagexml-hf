@@ -159,6 +159,7 @@ pagexml-hf path/to/your/transkribus.zip --repo-id username/dataset-name --split_
 
 # Group the split by project instead of page, or split individual rows (legacy)
 # --split-group-by project | --split-group-by none
+# With --line-augment the test split holds only the original lines; --split-augment-test keeps the augmented copies there too
 ```
 
 ### Python API

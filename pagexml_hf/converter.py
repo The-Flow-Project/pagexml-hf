@@ -331,6 +331,19 @@ class XmlConverter:
             {"train": dataset.select(train_idx), "test": dataset.select(test_idx)}
         )
 
+    @staticmethod
+    def _drop_augmented(dataset: Dataset) -> Dataset:
+        """Keep only original (non-augmented) rows; no-op without a ``line_augmentation`` column."""
+        if "line_augmentation" not in dataset.column_names:
+            return dataset
+        keep = [i for i, v in enumerate(dataset["line_augmentation"]) if v == "original"]
+        if len(keep) == len(dataset):
+            return dataset
+        logger.info(
+            f"Dropped {len(dataset) - len(keep)} augmented rows from the test split"
+        )
+        return dataset.select(keep)
+
     def convert(
         self,
         export_mode: str = "text",
@@ -346,6 +359,7 @@ class XmlConverter:
         allow_empty: bool = False,
         line_augment: int = 0,
         split_group_by: str | None = "page",
+        split_augment_test: bool = False,
     ) -> Dataset | DatasetDict:
         """
         Convert parsed data to a HuggingFace dataset.
@@ -370,6 +384,10 @@ class XmlConverter:
                 (project_name, filename), 'project' by project_name, None splits individual
                 rows (previous behaviour; lines of one page and augmented copies of one line
                 can land in both splits).
+            split_augment_test: Line mode with line_augment and split_train only. By default the
+                test split keeps only the original lines, so augmented copies are used for
+                training and test scores are measured on unmodified images. Set True to keep
+                the augmented copies in the test split too.
         Returns:
             HuggingFace Dataset
         """
@@ -460,6 +478,8 @@ class XmlConverter:
                 seed=split_seed,
                 group_by=split_group_by,
             )
+            if not split_augment_test:
+                dataset["test"] = self._drop_augmented(dataset["test"])
             logger.info(
                 f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}"
             )
@@ -547,6 +567,7 @@ class XmlConverter:
         append: bool = False,
         line_augment: int = 0,
         split_group_by: str | None = "page",
+        split_augment_test: bool = False,
     ) -> str:
         """
         Convert and upload in one step using parquet shards (memory efficient).
@@ -576,6 +597,7 @@ class XmlConverter:
             line_augment: Amount of random augmentations of line images \
                 (only for line mode)
             split_group_by: 'page', 'project' or None; see :meth:`convert`
+            split_augment_test: keep augmented copies in the test split; see :meth:`convert`
         Returns:
             Repository URL
         """
@@ -609,6 +631,7 @@ class XmlConverter:
             split_shuffle=split_shuffle,
             line_augment=line_augment,
             split_group_by=split_group_by,
+            split_augment_test=split_augment_test,
         )
 
         url = self.upload_to_hub(
