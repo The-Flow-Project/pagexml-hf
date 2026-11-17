@@ -110,3 +110,26 @@ def test_missing_group_columns_fall_back_to_row_split():
 def test_invalid_group_by_raises():
     with pytest.raises(ValueError, match="split_group_by"):
         XmlConverter._split_dataset(_lines(), 0.5, shuffle=False, seed=0, group_by="writer")
+
+
+def _augmented(pages=(("p", "a.png"), ("p", "b.png"), ("p", "c.png"), ("q", "d.png")), copies=3):
+    ds = _lines(pages=pages, copies=copies)
+    return ds.map(lambda r: {"line_augmentation": "original" if r["line_augmentation"] == 0 else '{"rot": 1}'})
+
+
+def test_drop_augmented_keeps_only_originals():
+    out = XmlConverter._drop_augmented(_augmented())
+    assert len(out) == 20
+    assert set(out["line_augmentation"]) == {"original"}
+
+
+def test_drop_augmented_without_column_is_noop():
+    ds = Dataset.from_list([{"project_name": "p", "filename": "a.png"}])
+    assert XmlConverter._drop_augmented(ds) is ds
+
+
+def test_test_split_loses_augmented_train_keeps_them():
+    out = XmlConverter._split_dataset(_augmented(), 0.5, shuffle=False, seed=1)
+    test = XmlConverter._drop_augmented(out["test"])
+    assert set(test["line_augmentation"]) == {"original"}
+    assert any(v != "original" for v in out["train"]["line_augmentation"])

@@ -150,6 +150,12 @@ def main():
         "source appears in both train and test (default: page). "
         "'none' splits individual rows.",
     )
+    parser.add_argument(
+        "--split-augment-test",
+        action="store_true",
+        help="Keep augmented line copies in the test split as well. By default the "
+        "test split contains only the original lines (default: False)",
+    )
     # ################ - end split arguments - ####################
 
     # ################ - operational arguments - ####################
@@ -334,6 +340,7 @@ def main():
                 split_seed=args.split_seed,
                 split_shuffle=args.split_shuffle,
                 split_group_by=None if args.split_group_by == "none" else args.split_group_by,
+                split_augment_test=args.split_augment_test,
                 mask_crop=args.mask_crop,
                 min_width=args.min_width,
                 min_height=args.min_height,
@@ -376,6 +383,7 @@ def main():
                 split_seed=args.split_seed,
                 split_shuffle=args.split_shuffle,
                 split_group_by=None if args.split_group_by == "none" else args.split_group_by,
+                split_augment_test=args.split_augment_test,
                 mask_crop=args.mask_crop,
                 min_width=args.min_width,
                 min_height=args.min_height,
